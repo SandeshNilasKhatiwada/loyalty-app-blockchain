@@ -1,24 +1,27 @@
-const hre = require("hardhat");
+import hre from "hardhat";
+import { writeFileSync } from "node:fs";
+import { join } from "node:path";
+import { fileURLToPath } from "node:url";
+
+const dirname = fileURLToPath(new URL(".", import.meta.url));
 
 async function main() {
-  const factory = await hre.ethers.deployContract("LoyalFactory");
-  await factory.waitForDeployment();
-  const factoryAddress = await factory.getAddress();
+  const connection = await hre.network.create();
+
+  const factory = await connection.viem.deployContract("LoyalFactory", []);
+  const factoryAddress = factory.address;
   console.log("Factory deployed to:", factoryAddress);
 
-  const registry = await hre.ethers.deployContract("MerchantRegistry");
-  await registry.waitForDeployment();
-  const registryAddress = await registry.getAddress();
+  const registry = await connection.viem.deployContract("MerchantRegistry", []);
+  const registryAddress = registry.address;
   console.log("Registry deployed to:", registryAddress);
 
-  // Save to a JSON file for the API to read
-  const fs = require("fs");
-  const path = require("path");
   const data = { factory: factoryAddress, registry: registryAddress };
-  fs.writeFileSync(
-    path.join(__dirname, "../../api/contract-addresses.json"),
+  writeFileSync(
+    join(dirname, "../../api/contract-addresses.json"),
     JSON.stringify(data, null, 2),
   );
+  console.log("contract-addresses.json written");
 }
 
 main().catch(console.error);

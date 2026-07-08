@@ -2,12 +2,20 @@ const { ethers } = require("ethers");
 const fs = require("fs");
 const path = require("path");
 
-// 1. Load contract addresses (from Hardhat deployment)
-const addresses = JSON.parse(
-  fs.readFileSync(path.join(__dirname, "../contract-addresses.json"), "utf-8"),
-);
+let addresses = {};
+try {
+  addresses = JSON.parse(
+    fs.readFileSync(
+      path.join(__dirname, "../contract-addresses.json"),
+      "utf-8",
+    ),
+  );
+} catch {
+  console.warn(
+    "⚠ contract-addresses.json not found — blockchain features disabled",
+  );
+}
 
-// 2. Minimal ABIs (only the functions we need)
 const TOKEN_ABI = [
   "function mint(address to, uint256 amount) external",
   "function burn(uint256 amount) external",
@@ -25,24 +33,43 @@ const REGISTRY_ABI = [
   "function merchantToToken(address) view returns (address)",
 ];
 
-// 3. Connect to blockchain
 const provider = new ethers.JsonRpcProvider(
   process.env.RPC_URL || "http://127.0.0.1:8545",
 );
 const wallet = new ethers.Wallet(process.env.PRIVATE_KEY, provider);
 
-// 4. Instantiate contracts
-const factory = new ethers.Contract(addresses.factory, FACTORY_ABI, wallet);
-const registry = new ethers.Contract(addresses.registry, REGISTRY_ABI, wallet);
-
 class BlockchainService {
+  _requireAddresses() {
+    if (!addresses.factory || !addresses.registry) {
+      throw new Error(
+        "Blockchain not configured — deploy contracts and create contract-addresses.json",
+      );
+    }
+  }
+
+  _getFactory() {
+    this._requireAddresses();
+    return new ethers.Contract(addresses.factory, FACTORY_ABI, wallet);
+  }
+
+  _getRegistry() {
+    this._requireAddresses();
+    return new ethers.Contract(addresses.registry, REGISTRY_ABI, wallet);
+  }
+
   async deployTokenForMerchant(merchantAddress, name, symbol) {
+    const factory = this._getFactory();
     const tx = await factory.createToken(name, symbol, merchantAddress);
     const receipt = await tx.wait();
-    // Find the TokenDeployed event (emitted by Factory)
     const event = receipt.logs.find((log) => log.eventName === "TokenDeployed");
     if (!event) throw new Error("TokenDeployed event not found");
     return event.args.tokenAddress;
+  }
+
+  async addMerchantToRegistry(merchantAddress, tokenAddress) {
+    const registry = this._getRegistry();
+    const tx = await registry.addMerchant(merchantAddress, tokenAddress);
+    return tx.wait();
   }
 
   async mintTokens(tokenAddress, to, amount) {
@@ -64,11 +91,20 @@ class BlockchainService {
   }
 
   async getTokenForMerchant(merchantAddress) {
+    const registry = this._getRegistry();
     return await registry.merchantToToken(merchantAddress);
   }
 
   async isMerchant(address) {
+    const registry = this._getRegistry();
     return await registry.isMerchant(address);
+  }
+
+  // In api/services/blockchain.js
+  async burnFromCustomer(tokenAddress, customerAddress, amount) {
+    const token = new ethers.Contract(tokenAddress, TOKEN_ABI, this.wallet);
+    const tx = await token.burnFrom(customerAddress, amount);
+    return tx.wait();
   }
 }
 
