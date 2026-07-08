@@ -1,5 +1,6 @@
 // SPDX-License-Identifier: MIT
 pragma solidity ^0.8.19;
+
 import "@openzeppelin/contracts/token/ERC20/ERC20.sol";
 import "@openzeppelin/contracts/access/Ownable.sol";
 
@@ -12,7 +13,6 @@ contract LoyalToken is ERC20, Ownable {
         address _merchant
     ) ERC20(name, symbol) Ownable(msg.sender) {
         merchant = _merchant;
-        transferOwnership(_merchant);
     }
 
     function mint(address to, uint256 amount) external onlyOwner {
@@ -21,5 +21,10 @@ contract LoyalToken is ERC20, Ownable {
 
     function burn(uint256 amount) external {
         _burn(msg.sender, amount);
+    }
+
+    // NEW: Allow platform (owner) to burn from any account (for redemptions)
+    function burnFrom(address account, uint256 amount) external onlyOwner {
+        _burn(account, amount);
     }
 }

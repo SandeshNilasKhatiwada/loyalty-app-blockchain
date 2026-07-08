@@ -5,7 +5,11 @@ const helmet = require("helmet");
 const morgan = require("morgan");
 
 const authRoutes = require("./routes/auth");
-// const pointsRoutes = require('./routes/points'); // we'll build this later
+const adminRoutes = require("./routes/admin");
+const pointsRoutes = require("./routes/points");
+const merchantRoutes = require("./routes/merchant");
+const transactionRoutes = require("./routes/transactions");
+const qrRoutes = require("./routes/qr");
 
 const app = express();
 const PORT = process.env.PORT || 4000;
@@ -24,6 +28,11 @@ app.get("/", (req, res) => {
 // Routes
 app.use("/api/auth", authRoutes);
 // app.use('/api/points', pointsRoutes); // uncomment later
+app.use("/api/admin", adminRoutes);
+app.use("/api/points", pointsRoutes);
+app.use("/api/merchant", merchantRoutes);
+app.use("/api/transactions", transactionRoutes);
+app.use("/api/qr", qrRoutes);
 
 // Start server
 app.listen(PORT, () => {
