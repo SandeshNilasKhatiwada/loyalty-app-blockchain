@@ -1,0 +1,26 @@
+node_modules/
+.env
+.env.*
+!.env.example
+dist/
+coverage/
+
+# Hardhat
+artifacts/
+cache/
+types/
+.gas-snapshot
+snapshots/
+
+# Prisma
+prisma/migrations/
+
+# IDE
+.vscode/
+.idea/
+*.swp
+*.swo
+
+# OS
+.DS_Store
+Thumbs.db

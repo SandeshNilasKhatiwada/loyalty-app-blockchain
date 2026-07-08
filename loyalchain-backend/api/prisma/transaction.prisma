@@ -1,0 +1,11 @@
+model Transaction {
+  id            String   @id @default(cuid())
+  txHash        String   @unique
+  type          String
+  fromAddress   String
+  toAddress     String
+  amount        String
+  tokenContract String
+  merchantId    String?
+  timestamp     DateTime @default(now())
+}
