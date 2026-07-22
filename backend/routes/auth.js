@@ -3,7 +3,7 @@ const multer = require("multer");
 const path = require("path");
 const prisma = require("../services/prisma");
 const { sign } = require("../services/jwt");
-const { jwtVerify, createRemoteJWKSet } = require("jose");
+const { jwtVerify, createRemoteJWKSet, errors } = require("jose");
 const blockchain = require("../services/blockchain");
 const auth = require("../middleware/auth");
 
@@ -15,7 +15,12 @@ const storage = multer.diskStorage({
 });
 const upload = multer({ storage, limits: { fileSize: 5 * 1024 * 1024 } });
 
+function isCompactJWS(token) {
+  return typeof token === "string" && token.split(".").length === 3;
+}
+
 async function verifyPrivyToken(privyToken) {
+  if (!isCompactJWS(privyToken)) throw new Error("Not a compact JWS");
   const { payload } = await jwtVerify(privyToken, privyJWKS, { issuer: "privy.io", audience: process.env.PRIVY_APP_ID });
   return payload;
 }
@@ -35,7 +40,7 @@ router.post("/register", upload.fields([{ name: "citizenshipPhoto", maxCount: 1 
     }
 
     if (role === "admin") {
-      user = await prisma.user.update({ where: { id: user.id }, data: { isAdmin: true } });
+      return res.status(403).json({ error: "Admin accounts can only be created by other admins" });
     }
 
     if (role === "merchant") {
@@ -44,13 +49,12 @@ router.post("/register", upload.fields([{ name: "citizenshipPhoto", maxCount: 1 
 
       const citizenshipPhoto = req.files?.citizenshipPhoto?.[0]?.filename || null;
       const documents = req.files?.documents?.map((f) => f.filename) || [];
-      const tokenAddr = await blockchain.deployTokenForMerchant(user.walletAddress || "0x0", businessName.slice(0, 5).toUpperCase(), `${businessName} Token`);
 
       await prisma.merchant.create({
         data: {
           userId: user.id, businessName, registrationNo: registrationNo || "",
           citizenshipPhoto, documents: JSON.stringify(documents),
-          kybStatus: "APPROVED", tokenContract: tokenAddr, tokenSymbol: businessName.slice(0, 5).toUpperCase(), exchangeRate: 100, feeRate: 5,
+          kybStatus: "PENDING", exchangeRate: 100, feeRate: 5,
         },
       });
       user = await prisma.user.update({ where: { id: user.id }, data: { isMerchant: true } });
@@ -76,7 +80,7 @@ router.post("/signup", async (req, res) => {
 });
 
 router.post("/login", async (req, res) => {
-  const { walletAddress, token: privyToken, businessName, registrationNo } = req.body;
+  const { walletAddress, token: privyToken } = req.body;
   try {
     if (privyToken) {
       const payload = await verifyPrivyToken(privyToken);
@@ -84,20 +88,17 @@ router.post("/login", async (req, res) => {
       if (!user) {
         user = await prisma.user.create({ data: { privyUserId: payload.sub, walletAddress: payload.wallet || payload.wallets?.[0]?.address || null, email: payload.email || null } });
       }
-      if (businessName) {
-        if (!user.isMerchant) {
-          const tokenAddr = await blockchain.deployTokenForMerchant(user.walletAddress || "0x0", businessName.slice(0, 5).toUpperCase(), `${businessName} Token`);
-          await prisma.merchant.create({
-            data: { userId: user.id, businessName, registrationNo: registrationNo || "", kybStatus: "APPROVED", tokenContract: tokenAddr, tokenSymbol: businessName.slice(0, 5).toUpperCase(), exchangeRate: 100, feeRate: 5 },
-          });
-          user = await prisma.user.update({ where: { id: user.id }, data: { isMerchant: true } });
-        }
+      if (user.status && user.status !== "ACTIVE") {
+        return res.status(403).json({ error: `Account ${user.status.toLowerCase()}` });
       }
       return res.json({ token: sign({ userId: user.id, walletAddress: user.walletAddress, isMerchant: user.isMerchant }), user });
     }
-    if (!walletAddress) return res.status(400).json({ error: "Provide walletAddress" });
+    if (!walletAddress) return res.status(400).json({ error: "Provide walletAddress or token" });
     const user = await prisma.user.findUnique({ where: { walletAddress } });
     if (!user) return res.status(404).json({ error: "User not found" });
+    if (user.status && user.status !== "ACTIVE") {
+      return res.status(403).json({ error: `Account ${user.status.toLowerCase()}` });
+    }
     res.json({ token: sign({ userId: user.id, walletAddress: user.walletAddress, isMerchant: user.isMerchant }), user });
   } catch (err) { res.status(500).json({ error: err.message }); }
 });
@@ -108,9 +109,8 @@ router.post("/merchant-signup", auth, async (req, res) => {
   try {
     let merchant = await prisma.merchant.findUnique({ where: { userId: req.user.id } });
     if (merchant) return res.status(400).json({ error: "Already a merchant" });
-    const tokenAddr = await blockchain.deployTokenForMerchant(req.user.walletAddress || "0x0", businessName.slice(0, 5).toUpperCase(), `${businessName} Token`);
     merchant = await prisma.merchant.create({
-      data: { userId: req.user.id, businessName, registrationNo: registrationNo || "", kybStatus: "APPROVED", tokenContract: tokenAddr, tokenSymbol: businessName.slice(0, 5).toUpperCase(), exchangeRate: 100, feeRate: 5 },
+      data: { userId: req.user.id, businessName, registrationNo: registrationNo || "", kybStatus: "PENDING", exchangeRate: 100, feeRate: 5 },
     });
     await prisma.user.update({ where: { id: req.user.id }, data: { isMerchant: true } });
     res.json({ merchant });

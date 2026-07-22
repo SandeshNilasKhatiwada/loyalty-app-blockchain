@@ -36,6 +36,12 @@ export const admin = {
   approve: (id, d) => api.patch(`/admin/merchants/${id}/approve`, d),
   reject: (id) => api.patch(`/admin/merchants/${id}/reject`),
   stats: () => api.get("/admin/stats"),
+  users: () => api.get("/admin/users"),
+  setAdmin: (id) => api.patch(`/admin/users/${id}/set-admin`),
+  blockUser: (id) => api.patch(`/admin/users/${id}/block`),
+  suspendUser: (id) => api.patch(`/admin/users/${id}/suspend`),
+  activateUser: (id) => api.patch(`/admin/users/${id}/activate`),
+  deleteUser: (id) => api.delete(`/admin/users/${id}`),
 };
 
 export const analytics = {

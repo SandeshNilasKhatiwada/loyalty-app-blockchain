@@ -3,38 +3,26 @@ import { test, expect } from "@playwright/test";
 const WALLET = "0xf39Fd6e51aad88F6F4ce6aB8827279cffFb92266";
 const BASE = "http://localhost:4000/api";
 
-let authToken, authUser;
+let authToken, authUser, adminToken;
 
 test.beforeAll(async ({ request }) => {
+  // Reset database
   await request.post("http://localhost:4000/api/test/reset");
-  const r = await request.post(`${BASE}/auth/signup`, {
-    data: { walletAddress: WALLET, email: "test@demo.com", name: "Test User" },
-  });
-  const b = await r.json();
-  // Set isAdmin on this user via direct API call
-  await request.post(`${BASE}/auth/login`, {
-    data: { walletAddress: WALLET },
-  });
-  // Use test/reset allows us, but we just updated user - need to set isAdmin
-  // We'll use a direct endpoint or fetch /me to check
-  await fetch(`${BASE.replace("/api", "")}/api/test/reset`, { method: "POST" });
-  // Re-create with isAdmin via direct DB call in beforeAll
-});
 
-// Re-setup: signup, then manually make admin
-test.beforeAll(async ({ request }) => {
-  // Reset was done above, redo signup
+  // Create admin user (wallet matches ADMIN_WALLETS env var)
   const sr = await request.post(`${BASE}/auth/signup`, {
-    data: { walletAddress: WALLET, email: "test@demo.com", name: "Test User" },
+    data: { walletAddress: WALLET, email: "admin@loyalchain.io", name: "Admin" },
   });
   const sb = await sr.json();
   authToken = sb.token;
   authUser = sb.user;
 
-  // Make user admin by calling login and using it
-  // Actually we need to update isAdmin via a DB call - use a workaround
-  // The admin middleware also checks ADMIN_WALLETS env var, and WALLET is in there
-  // So /me check won't have isAdmin=true from DB but admin routes will work via wallet check
+  // Login to get admin token
+  const lr = await request.post(`${BASE}/auth/login`, {
+    data: { walletAddress: WALLET },
+  });
+  const lb = await lr.json();
+  adminToken = lb.token;
 });
 
 test.describe("Backend API Health", () => {
@@ -96,7 +84,7 @@ test.describe("Auth Flow", () => {
 const MERCHANT_WALLET = "0x1111111111111111111111111111111111111111";
 
 test.describe("Merchant Flow", () => {
-  let token;
+  let token, merchantId;
 
   test.beforeAll(async ({ request }) => {
     const r = await request.post(`${BASE}/auth/signup`, {
@@ -106,14 +94,15 @@ test.describe("Merchant Flow", () => {
     token = b.token;
   });
 
-  test("merchant signup creates approved merchant", async ({ request }) => {
+  test("merchant signup creates pending merchant", async ({ request }) => {
     const r = await request.post(`${BASE}/auth/merchant-signup`, {
       headers: { Authorization: `Bearer ${token}` },
       data: { businessName: "Test Store", registrationNo: "REG-001" },
     });
     expect(r.ok()).toBeTruthy();
     const b = await r.json();
-    expect(b.merchant.kybStatus).toBe("APPROVED");
+    expect(b.merchant.kybStatus).toBe("PENDING");
+    merchantId = b.merchant.id;
   });
 
   test("non-admin cannot access admin routes", async ({ request }) => {
@@ -132,7 +121,27 @@ test.describe("Merchant Flow", () => {
     expect(b.merchant.businessName).toBe("Test Store");
   });
 
-  test("points award succeeds for approved merchant", async ({ request }) => {
+  test("points award fails for unapproved merchant", async ({ request }) => {
+    const r = await request.post(`${BASE}/points/award`, {
+      headers: { Authorization: `Bearer ${token}` },
+      data: { customerWallet: "0x70997970C51812dc3A010C7d01b50e0d17dc79C8", amount: "50" },
+    });
+    expect(r.status()).toBe(403);
+    const b = await r.json();
+    expect(b.error).toContain("not approved");
+  });
+
+  test("admin can approve merchant", async ({ request }) => {
+    const r = await request.patch(`${BASE}/admin/merchants/${merchantId}/approve`, {
+      headers: { Authorization: `Bearer ${adminToken}` },
+      data: { tokenName: "Test Store Token", tokenSymbol: "TST" },
+    });
+    expect(r.ok()).toBeTruthy();
+    const b = await r.json();
+    expect(b.merchant.kybStatus).toBe("APPROVED");
+  });
+
+  test("points award succeeds after approval", async ({ request }) => {
     const r = await request.post(`${BASE}/points/award`, {
       headers: { Authorization: `Bearer ${token}` },
       data: { customerWallet: "0x70997970C51812dc3A010C7d01b50e0d17dc79C8", amount: "50" },
@@ -144,8 +153,6 @@ test.describe("Merchant Flow", () => {
 });
 
 test.describe("Admin & Analytics API", () => {
-  let adminToken;
-
   test.beforeAll(async ({ request }) => {
     const r = await request.post(`${BASE}/auth/login`, {
       data: { walletAddress: WALLET },
