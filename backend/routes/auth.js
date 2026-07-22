@@ -17,12 +17,22 @@ router.post("/signup", async (req, res) => {
 });
 
 router.post("/login", async (req, res) => {
-  const { walletAddress, token: privyToken } = req.body;
+  const { walletAddress, token: privyToken, businessName, registrationNo } = req.body;
   try {
     if (privyToken) {
       const { payload } = await jwtVerify(privyToken, privyJWKS, { issuer: "privy.io", audience: process.env.PRIVY_APP_ID });
       let user = await prisma.user.findUnique({ where: { privyUserId: payload.sub } });
-      if (!user) user = await prisma.user.create({ data: { privyUserId: payload.sub, walletAddress: payload.wallet || payload.wallets?.[0]?.address || null, email: payload.email || null } });
+      if (!user) {
+        user = await prisma.user.create({ data: { privyUserId: payload.sub, walletAddress: payload.wallet || payload.wallets?.[0]?.address || null, email: payload.email || null } });
+      }
+      if (businessName) {
+        if (!user.isMerchant) {
+          await prisma.merchant.create({
+            data: { userId: user.id, businessName, registrationNo: registrationNo || "", kybStatus: "PENDING", exchangeRate: 100, feeRate: 5 },
+          });
+          user = await prisma.user.update({ where: { id: user.id }, data: { isMerchant: true } });
+        }
+      }
       return res.json({ token: sign({ userId: user.id, walletAddress: user.walletAddress, isMerchant: user.isMerchant }), user });
     }
     if (!walletAddress) return res.status(400).json({ error: "Provide walletAddress" });
