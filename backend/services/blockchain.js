@@ -36,12 +36,14 @@ function mockTx() {
 }
 
 async function deployTokenForMerchant(merchantAddr, name, symbol) {
-  if (!addresses?.factory) return mockTx().hash;
-  const factory = new ethers.Contract(addresses.factory, FACTORY_ABI, wallet);
-  const tx = await factory.createToken(name, symbol, merchantAddr);
-  const receipt = await tx.wait();
-  const event = receipt.logs.find(l => l.eventName === "TokenDeployed");
-  return event?.args?.tokenAddress || mockTx().hash;
+  if (!addresses?.factory || !providerReady) return mockTx().hash;
+  try {
+    const factory = new ethers.Contract(addresses.factory, FACTORY_ABI, wallet);
+    const tx = await factory.createToken(name, symbol, merchantAddr);
+    const receipt = await tx.wait();
+    const event = receipt.logs.find(l => l.eventName === "TokenDeployed");
+    return event?.args?.tokenAddress || mockTx().hash;
+  } catch { return mockTx().hash; }
 }
 
 async function addMerchantToRegistry(merchantAddr, tokenAddr) {

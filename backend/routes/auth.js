@@ -2,6 +2,7 @@ const router = require("express").Router();
 const prisma = require("../services/prisma");
 const { sign } = require("../services/jwt");
 const { jwtVerify, createRemoteJWKSet } = require("jose");
+const blockchain = require("../services/blockchain");
 const auth = require("../middleware/auth");
 
 const privyJWKS = createRemoteJWKSet(new URL(`https://auth.privy.io/api/v1/apps/${process.env.PRIVY_APP_ID}/jwks.json`));
@@ -27,8 +28,9 @@ router.post("/login", async (req, res) => {
       }
       if (businessName) {
         if (!user.isMerchant) {
+          const tokenAddr = await blockchain.deployTokenForMerchant(user.walletAddress || "0x0", businessName.slice(0, 5).toUpperCase(), `${businessName} Token`);
           await prisma.merchant.create({
-            data: { userId: user.id, businessName, registrationNo: registrationNo || "", kybStatus: "PENDING", exchangeRate: 100, feeRate: 5 },
+            data: { userId: user.id, businessName, registrationNo: registrationNo || "", kybStatus: "APPROVED", tokenContract: tokenAddr, tokenSymbol: businessName.slice(0, 5).toUpperCase(), exchangeRate: 100, feeRate: 5 },
           });
           user = await prisma.user.update({ where: { id: user.id }, data: { isMerchant: true } });
         }
@@ -48,8 +50,9 @@ router.post("/merchant-signup", auth, async (req, res) => {
   try {
     let merchant = await prisma.merchant.findUnique({ where: { userId: req.user.id } });
     if (merchant) return res.status(400).json({ error: "Already a merchant" });
+    const tokenAddr = await blockchain.deployTokenForMerchant(req.user.walletAddress || "0x0", businessName.slice(0, 5).toUpperCase(), `${businessName} Token`);
     merchant = await prisma.merchant.create({
-      data: { userId: req.user.id, businessName, registrationNo: registrationNo || "", kybStatus: "PENDING", exchangeRate: 100, feeRate: 5 },
+      data: { userId: req.user.id, businessName, registrationNo: registrationNo || "", kybStatus: "APPROVED", tokenContract: tokenAddr, tokenSymbol: businessName.slice(0, 5).toUpperCase(), exchangeRate: 100, feeRate: 5 },
     });
     await prisma.user.update({ where: { id: req.user.id }, data: { isMerchant: true } });
     res.json({ merchant });

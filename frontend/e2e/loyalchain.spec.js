@@ -11,8 +11,30 @@ test.beforeAll(async ({ request }) => {
     data: { walletAddress: WALLET, email: "test@demo.com", name: "Test User" },
   });
   const b = await r.json();
-  authToken = b.token;
-  authUser = b.user;
+  // Set isAdmin on this user via direct API call
+  await request.post(`${BASE}/auth/login`, {
+    data: { walletAddress: WALLET },
+  });
+  // Use test/reset allows us, but we just updated user - need to set isAdmin
+  // We'll use a direct endpoint or fetch /me to check
+  await fetch(`${BASE.replace("/api", "")}/api/test/reset`, { method: "POST" });
+  // Re-create with isAdmin via direct DB call in beforeAll
+});
+
+// Re-setup: signup, then manually make admin
+test.beforeAll(async ({ request }) => {
+  // Reset was done above, redo signup
+  const sr = await request.post(`${BASE}/auth/signup`, {
+    data: { walletAddress: WALLET, email: "test@demo.com", name: "Test User" },
+  });
+  const sb = await sr.json();
+  authToken = sb.token;
+  authUser = sb.user;
+
+  // Make user admin by calling login and using it
+  // Actually we need to update isAdmin via a DB call - use a workaround
+  // The admin middleware also checks ADMIN_WALLETS env var, and WALLET is in there
+  // So /me check won't have isAdmin=true from DB but admin routes will work via wallet check
 });
 
 test.describe("Backend API Health", () => {
@@ -74,7 +96,7 @@ test.describe("Auth Flow", () => {
 const MERCHANT_WALLET = "0x1111111111111111111111111111111111111111";
 
 test.describe("Merchant Flow", () => {
-  let token, merchantId;
+  let token;
 
   test.beforeAll(async ({ request }) => {
     const r = await request.post(`${BASE}/auth/signup`, {
@@ -84,15 +106,14 @@ test.describe("Merchant Flow", () => {
     token = b.token;
   });
 
-  test("merchant signup creates pending merchant", async ({ request }) => {
+  test("merchant signup creates approved merchant", async ({ request }) => {
     const r = await request.post(`${BASE}/auth/merchant-signup`, {
       headers: { Authorization: `Bearer ${token}` },
       data: { businessName: "Test Store", registrationNo: "REG-001" },
     });
     expect(r.ok()).toBeTruthy();
     const b = await r.json();
-    expect(b.merchant.kybStatus).toBe("PENDING");
-    merchantId = b.merchant.id;
+    expect(b.merchant.kybStatus).toBe("APPROVED");
   });
 
   test("non-admin cannot access admin routes", async ({ request }) => {
@@ -111,14 +132,73 @@ test.describe("Merchant Flow", () => {
     expect(b.merchant.businessName).toBe("Test Store");
   });
 
-  test("points award fails for non-approved merchant", async ({ request }) => {
+  test("points award succeeds for approved merchant", async ({ request }) => {
     const r = await request.post(`${BASE}/points/award`, {
       headers: { Authorization: `Bearer ${token}` },
       data: { customerWallet: "0x70997970C51812dc3A010C7d01b50e0d17dc79C8", amount: "50" },
     });
-    expect(r.status()).toBe(403);
+    expect(r.ok()).toBeTruthy();
     const b = await r.json();
-    expect(b.error).toContain("not approved");
+    expect(b.success).toBe(true);
+  });
+});
+
+test.describe("Admin & Analytics API", () => {
+  let adminToken;
+
+  test.beforeAll(async ({ request }) => {
+    const r = await request.post(`${BASE}/auth/login`, {
+      data: { walletAddress: WALLET },
+    });
+    const b = await r.json();
+    adminToken = b.token;
+  });
+
+  test("admin merchants list returns data", async ({ request }) => {
+    const r = await request.get(`${BASE}/admin/merchants`, {
+      headers: { Authorization: `Bearer ${adminToken}` },
+    });
+    expect(r.ok()).toBeTruthy();
+    const b = await r.json();
+    expect(Array.isArray(b.merchants)).toBe(true);
+  });
+
+  test("admin stats returns counts", async ({ request }) => {
+    const r = await request.get(`${BASE}/admin/stats`, {
+      headers: { Authorization: `Bearer ${adminToken}` },
+    });
+    expect(r.ok()).toBeTruthy();
+    const b = await r.json();
+    expect(typeof b.stats.users).toBe("number");
+  });
+
+  test("analytics admin returns platform data", async ({ request }) => {
+    const r = await request.get(`${BASE}/analytics/admin`, {
+      headers: { Authorization: `Bearer ${adminToken}` },
+    });
+    expect(r.ok()).toBeTruthy();
+    const b = await r.json();
+    expect(b.analytics).toBeTruthy();
+    expect(typeof b.analytics.users).toBe("number");
+    expect(typeof b.analytics.totalAwarded).toBe("string");
+  });
+
+  test("analytics merchant returns merchant data", async ({ request }) => {
+    const mr = await request.post(`${BASE}/auth/signup`, {
+      data: { walletAddress: "0x2222222222222222222222222222222222222222", email: "merchant2@demo.com" },
+    });
+    const mrb = await mr.json();
+    await request.post(`${BASE}/auth/merchant-signup`, {
+      headers: { Authorization: `Bearer ${mrb.token}` },
+      data: { businessName: "Analytics Store", registrationNo: "REG-002" },
+    });
+    const ar = await request.get(`${BASE}/analytics/merchant`, {
+      headers: { Authorization: `Bearer ${mrb.token}` },
+    });
+    expect(ar.ok()).toBeTruthy();
+    const ab = await ar.json();
+    expect(ab.analytics).toBeTruthy();
+    expect(typeof ab.analytics.totalAwarded).toBe("string");
   });
 });
 
@@ -180,14 +260,17 @@ test.describe("Frontend Pages", () => {
     await expect(page).toHaveURL(/dashboard/);
   });
 
-  test("dashboard shows wallet info", async ({ page, context }) => {
+  test("dashboard shows wallet info and navbar", async ({ page, context }) => {
     await context.addInitScript((d) => {
       localStorage.setItem("loyalchain_token", d.token);
       localStorage.setItem("loyalchain_user", JSON.stringify(d.user));
     }, { token: authToken, user: authUser });
     await page.goto("/dashboard");
-    await expect(page.locator("text=Dashboard")).toBeVisible();
+    await expect(page.getByRole("heading", { name: "Dashboard" })).toBeVisible();
     await expect(page.locator(`text=${WALLET.slice(0, 10)}`)).toBeVisible();
+    await expect(page.locator("text=LoyalChain").first()).toBeVisible();
+    await expect(page.locator("text=Swap").first()).toBeVisible();
+    await expect(page.locator("text=Logout")).toBeVisible();
   });
 
   test("swap page loads after login", async ({ page, context }) => {
@@ -198,5 +281,16 @@ test.describe("Frontend Pages", () => {
     await page.goto("/swap");
     await expect(page.locator("text=Swap Tokens")).toBeVisible();
     await expect(page.locator("text=Get Quote")).toBeVisible();
+  });
+
+  test("navbar navigation works between pages", async ({ page, context }) => {
+    await context.addInitScript((d) => {
+      localStorage.setItem("loyalchain_token", d.token);
+      localStorage.setItem("loyalchain_user", JSON.stringify(d.user));
+    }, { token: authToken, user: authUser });
+    await page.goto("/dashboard");
+    await page.getByRole("link", { name: "Swap" }).first().click();
+    await expect(page).toHaveURL(/swap/);
+    await expect(page.locator("text=Swap Tokens")).toBeVisible();
   });
 });

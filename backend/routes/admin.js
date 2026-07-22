@@ -38,6 +38,14 @@ router.patch("/merchants/:id/reject", auth, admin, async (req, res) => {
   res.json({ success: true, merchant });
 });
 
+router.get("/merchants", auth, admin, async (req, res) => {
+  const merchants = await prisma.merchant.findMany({
+    include: { user: { select: { walletAddress: true, email: true, name: true, isMerchant: true, isAdmin: true } } },
+    orderBy: { createdAt: "desc" },
+  });
+  res.json({ merchants });
+});
+
 router.get("/stats", auth, admin, async (req, res) => {
   const [users, merchants, transactions, approved] = await Promise.all([
     prisma.user.count(), prisma.merchant.count(), prisma.transaction.count(),

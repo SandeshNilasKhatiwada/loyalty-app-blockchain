@@ -37,3 +37,8 @@ export const admin = {
   reject: (id) => api.patch(`/admin/merchants/${id}/reject`),
   stats: () => api.get("/admin/stats"),
 };
+
+export const analytics = {
+  merchant: () => api.get("/analytics/merchant"),
+  admin: () => api.get("/analytics/admin"),
+};

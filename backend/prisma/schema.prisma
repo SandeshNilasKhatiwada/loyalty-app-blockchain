@@ -13,6 +13,7 @@ model User {
   email         String?
   name          String?
   isMerchant    Boolean  @default(false)
+  isAdmin       Boolean  @default(false)
   createdAt     DateTime @default(now())
   updatedAt     DateTime @updatedAt
 

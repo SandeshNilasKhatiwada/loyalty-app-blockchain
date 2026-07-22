@@ -18,7 +18,7 @@ export default function Login() {
   const [regNo, setRegNo] = useState("");
 
   useEffect(() => {
-    if (user) { navigate("/dashboard", { replace: true }); }
+    if (user) navigate("/dashboard", { replace: true });
   }, [user]);
 
   useEffect(() => {
@@ -33,9 +33,9 @@ export default function Login() {
       const token = await getAccessToken();
       const body = { token };
       if (isMerchant) {
-        if (!businessName) { setError("Business name is required"); setLoading(false); return; }
-        body.businessName = businessName;
-        body.registrationNo = regNo;
+        if (!businessName.trim()) { setError("Business name is required"); setLoading(false); return; }
+        body.businessName = businessName.trim();
+        body.registrationNo = regNo.trim();
       }
       const r = await api.post("/auth/login", body);
       appLogin(r.data.token, r.data.user);
