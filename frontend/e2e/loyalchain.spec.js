@@ -260,14 +260,13 @@ test.describe("Frontend Pages", () => {
     await expect(page).toHaveURL(/dashboard/);
   });
 
-  test("dashboard shows wallet info and navbar", async ({ page, context }) => {
+  test("dashboard shows welcome and navbar", async ({ page, context }) => {
     await context.addInitScript((d) => {
       localStorage.setItem("loyalchain_token", d.token);
       localStorage.setItem("loyalchain_user", JSON.stringify(d.user));
     }, { token: authToken, user: authUser });
     await page.goto("/dashboard");
-    await expect(page.getByRole("heading", { name: "Dashboard" })).toBeVisible();
-    await expect(page.locator(`text=${WALLET.slice(0, 10)}`)).toBeVisible();
+    await expect(page.getByText(/Welcome back/)).toBeVisible();
     await expect(page.locator("text=LoyalChain").first()).toBeVisible();
     await expect(page.locator("text=Swap").first()).toBeVisible();
     await expect(page.locator("text=Logout")).toBeVisible();

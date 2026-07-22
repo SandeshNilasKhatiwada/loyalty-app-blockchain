@@ -3,10 +3,8 @@ import { useAuth } from "./contexts/AuthContext";
 import Login from "./pages/Login";
 import Dashboard from "./pages/Dashboard";
 import Swap from "./pages/Swap";
-import TopUp from "./pages/TopUp";
 import MerchantPanel from "./pages/MerchantPanel";
 import Admin from "./pages/Admin";
-import Redemption from "./pages/Redemption";
 import Layout from "./components/Layout";
 
 function P({ children }) {
@@ -22,9 +20,9 @@ export default function App() {
       <Route path="/login" element={user ? <Navigate to="/dashboard" /> : <Login />} />
       <Route path="/dashboard" element={<P><Layout><Dashboard /></Layout></P>} />
       <Route path="/swap" element={<P><Layout><Swap /></Layout></P>} />
-      <Route path="/topup" element={<P><Layout><TopUp /></Layout></P>} />
       <Route path="/merchant" element={<P><Layout><MerchantPanel /></Layout></P>} />
-      <Route path="/redeem" element={<P><Layout><Redemption /></Layout></P>} />
+      <Route path="/topup" element={<Navigate to="/merchant" replace />} />
+      <Route path="/redeem" element={<Navigate to="/merchant" replace />} />
       <Route path="/admin" element={<P><Layout><Admin /></Layout></P>} />
       <Route path="/" element={<Navigate to="/dashboard" />} />
       <Route path="*" element={<Navigate to="/dashboard" />} />
