@@ -23,6 +23,7 @@ router.get("/merchant", auth, async (req, res) => {
       totalAwarded: sumAmounts(awards),
       totalRedeemed: sumAmounts(redeems),
       uniqueCustomers: customers.length,
+      tokenBalance: (merchant.tokenBalance || "0").toString(),
       recentTransactions: recentTxs,
     },
   });

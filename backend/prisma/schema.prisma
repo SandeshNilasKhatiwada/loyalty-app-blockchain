@@ -15,6 +15,7 @@ model User {
   isMerchant    Boolean  @default(false)
   isAdmin       Boolean  @default(false)
   status        String   @default("ACTIVE")
+  pointsBalance BigInt   @default(0)
   createdAt     DateTime @default(now())
   updatedAt     DateTime @updatedAt
 
@@ -37,6 +38,7 @@ model Merchant {
   tokenName       String?
   exchangeRate    Int      @default(100)
   feeRate         Int      @default(5)
+  tokenBalance    BigInt   @default(0)
   createdAt       DateTime @default(now())
   updatedAt       DateTime @updatedAt
 

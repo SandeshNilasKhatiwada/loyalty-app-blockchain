@@ -25,6 +25,7 @@ app.use("/api/transactions", require("./routes/transactions"));
 app.use("/api/qr", require("./routes/qr"));
 app.use("/api/swap", require("./routes/swap"));
 app.use("/api/analytics", require("./routes/analytics"));
+app.use("/api/merchants", require("./routes/merchants"));
 
 if (process.env.NODE_ENV !== "production") {
   app.post("/api/test/reset", async (req, res) => {

@@ -7,7 +7,8 @@ import Dashboard from "./pages/Dashboard";
 import Swap from "./pages/Swap";
 import MerchantPanel from "./pages/MerchantPanel";
 import Admin from "./pages/Admin";
-import Layout from "./components/Layout";
+import Merchants from "./pages/Merchants";
+import SidebarLayout from "./components/SidebarLayout";
 
 function P({ children }) {
   const { user, loading } = useAuth();
@@ -22,12 +23,11 @@ export default function App() {
       <Route path="/" element={user ? <Navigate to="/dashboard" /> : <Landing />} />
       <Route path="/login" element={user ? <Navigate to="/dashboard" /> : <Login />} />
       <Route path="/register" element={user ? <Navigate to="/dashboard" /> : <Register />} />
-      <Route path="/dashboard" element={<P><Layout><Dashboard /></Layout></P>} />
-      <Route path="/swap" element={<P><Layout><Swap /></Layout></P>} />
-      <Route path="/merchant" element={<P><Layout><MerchantPanel /></Layout></P>} />
-      <Route path="/topup" element={<Navigate to="/merchant" replace />} />
-      <Route path="/redeem" element={<Navigate to="/merchant" replace />} />
-      <Route path="/admin" element={<P><Layout><Admin /></Layout></P>} />
+      <Route path="/dashboard" element={<P><SidebarLayout><Dashboard /></SidebarLayout></P>} />
+      <Route path="/swap" element={<P><SidebarLayout><Swap /></SidebarLayout></P>} />
+      <Route path="/merchant" element={<P><SidebarLayout><MerchantPanel /></SidebarLayout></P>} />
+      <Route path="/merchants" element={<P><SidebarLayout><Merchants /></SidebarLayout></P>} />
+      <Route path="/admin" element={<P><SidebarLayout><Admin /></SidebarLayout></P>} />
       <Route path="*" element={<Navigate to="/" />} />
     </Routes>
   );

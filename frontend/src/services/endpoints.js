@@ -10,7 +10,8 @@ export const auth = {
 export const points = {
   award: (d) => api.post("/points/award", d),
   redeem: (d) => api.post("/points/redeem", d),
-  balance: (wa, tc) => api.get(`/points/balance/${wa}`, { params: { tokenContract: tc } }),
+  balance: () => api.get("/points/balance"),
+  balanceByEmail: (email) => api.get(`/points/balance/${encodeURIComponent(email)}`),
   history: () => api.get("/points/history"),
   merchantToken: () => api.get("/points/merchant-token"),
 };
@@ -18,6 +19,10 @@ export const points = {
 export const merchant = {
   topup: (d) => api.post("/merchant/topup", d),
   status: () => api.get("/merchant/status"),
+};
+
+export const merchants = {
+  public: () => api.get("/merchants/public"),
 };
 
 export const transactions = {
