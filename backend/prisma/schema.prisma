@@ -1,8 +1,3 @@
-// This is your Prisma schema file,
-// learn more about it in the docs: https://pris.ly/d/prisma-schema
-
-// Get a free hosted Postgres database in seconds: `npx create-db`
-
 generator client {
   provider = "prisma-client-js"
 }
@@ -13,16 +8,50 @@ datasource db {
 
 model User {
   id            String   @id @default(cuid())
-  privyUserId   String   @unique
-  walletAddress String   @unique
+  privyUserId   String?  @unique
+  walletAddress String?  @unique
   email         String?
   name          String?
   isMerchant    Boolean  @default(false)
   createdAt     DateTime @default(now())
   updatedAt     DateTime @updatedAt
 
-  // Merchant fields (for later)
-  businessName  String?
-  kybStatus     String? @default("PENDING")
+  merchant      Merchant?
+  transactions  Transaction[]
+}
+
+model Merchant {
+  id              String   @id @default(cuid())
+  userId          String   @unique
+  user            User     @relation(fields: [userId], references: [id])
+  businessName    String
+  registrationNo  String?
+  address         String?
+  kybStatus       String   @default("PENDING")
+  tokenContract   String?
+  tokenSymbol     String?
+  tokenName       String?
+  exchangeRate    Int      @default(100)
+  feeRate         Int      @default(5)
+  createdAt       DateTime @default(now())
+  updatedAt       DateTime @updatedAt
+
+  transactions  Transaction[]
+}
+
+model Transaction {
+  id            String   @id @default(cuid())
+  txHash        String   @unique
+  type          String
+  fromAddress   String
+  toAddress     String
+  amount        String
   tokenContract String?
+  status        String   @default("CONFIRMED")
+  merchantId    String?
+  userId        String?
+  createdAt     DateTime @default(now())
+
+  merchant      Merchant? @relation(fields: [merchantId], references: [id])
+  user          User?     @relation(fields: [userId], references: [id])
 }

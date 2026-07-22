@@ -1,64 +1,31 @@
-const { jwtVerify } = require("jose");
+const { jwtVerify, createRemoteJWKSet } = require("jose");
+const { verify } = require("../services/jwt");
 const prisma = require("../services/prisma");
 
-/**
- * Verify Privy JWT and attach user to request
- */
-module.exports = async (req, res, next) => {
-  const authHeader = req.headers.authorization;
-  if (!authHeader) {
-    return res.status(401).json({ error: "No authorization header" });
-  }
+const privyJWKS = createRemoteJWKSet(new URL(`https://auth.privy.io/api/v1/apps/${process.env.PRIVY_APP_ID}/jwks.json`));
 
-  const token = authHeader.split(" ")[1];
-  if (!token) {
-    return res.status(401).json({ error: "Invalid token format" });
-  }
+module.exports = async (req, res, next) => {
+  const header = req.headers.authorization;
+  if (!header) return res.status(401).json({ error: "No token" });
+  const token = header.split(" ")[1];
+  if (!token) return res.status(401).json({ error: "Bad format" });
 
   try {
-    // Verify JWT with Privy's app secret
-    const secret = new TextEncoder().encode(process.env.PRIVY_APP_SECRET);
-    const { payload } = await jwtVerify(token, secret, {
-      issuer: "privy.io",
-      audience: process.env.PRIVY_APP_ID,
-    });
-
-    // Privy payload structure
-    const privyUserId = payload.sub;
-    const walletAddress = payload.wallet || payload.wallets?.[0]?.address;
-
-    if (!privyUserId || !walletAddress) {
-      return res.status(401).json({ error: "Invalid Privy token" });
-    }
-
-    // Find or create user in database
-    let user = await prisma.user.findUnique({
-      where: { privyUserId },
-    });
-
-    if (!user) {
-      user = await prisma.user.create({
-        data: {
-          privyUserId,
-          walletAddress,
-          email: payload.email || null,
-        },
-      });
-    } else {
-      // Update wallet address if changed
-      if (user.walletAddress !== walletAddress) {
-        user = await prisma.user.update({
-          where: { id: user.id },
-          data: { walletAddress },
-        });
+    try {
+      const { payload } = await jwtVerify(token, privyJWKS, { issuer: "privy.io", audience: process.env.PRIVY_APP_ID });
+      let user = await prisma.user.findUnique({ where: { privyUserId: payload.sub } });
+      if (!user) {
+        const wa = payload.wallet || payload.wallets?.[0]?.address || null;
+        user = await prisma.user.create({ data: { privyUserId: payload.sub, walletAddress: wa, email: payload.email || null } });
       }
-    }
+      req.user = user;
+      return next();
+    } catch {}
 
+    const decoded = verify(token);
+    const user = await prisma.user.findUnique({ where: { id: decoded.userId } });
+    if (!user) return res.status(401).json({ error: "User not found" });
     req.user = user;
-    req.privyPayload = payload;
     next();
-  } catch (err) {
-    console.error("Auth error:", err);
-    return res.status(401).json({ error: "Invalid or expired token" });
-  }
+  } catch { res.status(401).json({ error: "Invalid token" }); }
 };

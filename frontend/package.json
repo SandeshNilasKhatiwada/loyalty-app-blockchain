@@ -1,27 +1,30 @@
 {
-  "name": "frontend",
+  "name": "loyalchain-frontend",
   "private": true,
-  "version": "0.0.0",
+  "version": "2.0.0",
   "type": "module",
   "scripts": {
     "dev": "vite",
     "build": "vite build",
-    "lint": "eslint .",
-    "preview": "vite preview"
+    "preview": "vite preview",
+    "test": "playwright test",
+    "test:ui": "playwright test --ui"
   },
   "dependencies": {
     "@privy-io/react-auth": "^3.35.1",
     "@tailwindcss/postcss": "^4.3.3",
     "axios": "^1.18.1",
+    "clsx": "^2.1.1",
     "ethers": "^6.17.0",
+    "lucide-react": "^0.511.0",
     "react": "^19.2.7",
     "react-dom": "^19.2.7",
-    "react-router-dom": "^7.18.1"
+    "react-router-dom": "^7.18.1",
+    "tailwind-merge": "^3.2.0"
   },
   "devDependencies": {
     "@eslint/js": "^10.0.1",
-    "@types/react": "^19.2.17",
-    "@types/react-dom": "^19.2.3",
+    "@playwright/test": "^1.54.0",
     "@vitejs/plugin-react": "^6.0.3",
     "autoprefixer": "^10.5.4",
     "eslint": "^10.6.0",
