@@ -245,10 +245,24 @@ test.describe("Swap & Transactions", () => {
 });
 
 test.describe("Frontend Pages", () => {
+  test("landing page loads", async ({ page }) => {
+    await page.goto("/");
+    await expect(page.locator("text=LoyalChain").first()).toBeVisible();
+    await expect(page.getByRole("button", { name: "Get Started Free" })).toBeVisible();
+    await expect(page.getByRole("button", { name: "Sign In" })).toBeVisible();
+  });
+
   test("login page loads", async ({ page }) => {
     await page.goto("/login");
-    await expect(page.locator("text=LoyalChain")).toBeVisible();
+    await expect(page.locator("text=Welcome back")).toBeVisible();
     await expect(page.locator("text=Continue with Email")).toBeVisible();
+  });
+
+  test("register page loads", async ({ page }) => {
+    await page.goto("/register");
+    await expect(page.locator("text=Create your account")).toBeVisible();
+    await expect(page.locator("text=Regular User")).toBeVisible();
+    await expect(page.locator("text=Merchant")).toBeVisible();
   });
 
   test("login redirects when already authenticated", async ({ page, context }) => {

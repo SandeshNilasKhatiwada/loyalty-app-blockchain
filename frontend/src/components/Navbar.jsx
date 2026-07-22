@@ -44,9 +44,7 @@ export default function Navbar() {
                 to={l.to}
                 className={cn(
                   "flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-sm font-medium transition-colors",
-                  active(l.to)
-                    ? "bg-blue-50 text-blue-700"
-                    : "text-gray-600 hover:text-gray-900 hover:bg-gray-50"
+                  active(l.to) ? "bg-blue-50 text-blue-700" : "text-gray-600 hover:text-gray-900 hover:bg-gray-50"
                 )}
               >
                 <l.icon className="w-4 h-4" />

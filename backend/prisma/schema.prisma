@@ -28,6 +28,8 @@ model Merchant {
   businessName    String
   registrationNo  String?
   address         String?
+  citizenshipPhoto String?
+  documents       String?
   kybStatus       String   @default("PENDING")
   tokenContract   String?
   tokenSymbol     String?

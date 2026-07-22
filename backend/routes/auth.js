@@ -1,4 +1,6 @@
 const router = require("express").Router();
+const multer = require("multer");
+const path = require("path");
 const prisma = require("../services/prisma");
 const { sign } = require("../services/jwt");
 const { jwtVerify, createRemoteJWKSet } = require("jose");
@@ -6,6 +8,62 @@ const blockchain = require("../services/blockchain");
 const auth = require("../middleware/auth");
 
 const privyJWKS = createRemoteJWKSet(new URL(`https://auth.privy.io/api/v1/apps/${process.env.PRIVY_APP_ID}/jwks.json`));
+
+const storage = multer.diskStorage({
+  destination: path.join(__dirname, "../uploads"),
+  filename: (req, file, cb) => cb(null, Date.now() + "-" + file.originalname.replace(/[^a-zA-Z0-9.-]/g, "_")),
+});
+const upload = multer({ storage, limits: { fileSize: 5 * 1024 * 1024 } });
+
+async function verifyPrivyToken(privyToken) {
+  const { payload } = await jwtVerify(privyToken, privyJWKS, { issuer: "privy.io", audience: process.env.PRIVY_APP_ID });
+  return payload;
+}
+
+router.post("/register", upload.fields([{ name: "citizenshipPhoto", maxCount: 1 }, { name: "documents", maxCount: 5 }]), async (req, res) => {
+  try {
+    const { token: privyToken, role, businessName, registrationNo, name: userName } = req.body;
+    if (!privyToken) return res.status(400).json({ error: "Auth token required" });
+    if (!role || !["user", "merchant", "admin"].includes(role)) return res.status(400).json({ error: "Valid role required (user/merchant/admin)" });
+
+    const payload = await verifyPrivyToken(privyToken);
+    let user = await prisma.user.findUnique({ where: { privyUserId: payload.sub } });
+    if (!user) {
+      user = await prisma.user.create({
+        data: { privyUserId: payload.sub, walletAddress: payload.wallet || payload.wallets?.[0]?.address || null, email: payload.email || null, name: userName || payload.email || null },
+      });
+    }
+
+    if (role === "admin") {
+      user = await prisma.user.update({ where: { id: user.id }, data: { isAdmin: true } });
+    }
+
+    if (role === "merchant") {
+      if (!businessName) return res.status(400).json({ error: "Business name required for merchants" });
+      if (user.isMerchant) return res.status(400).json({ error: "Already a merchant" });
+
+      const citizenshipPhoto = req.files?.citizenshipPhoto?.[0]?.filename || null;
+      const documents = req.files?.documents?.map((f) => f.filename) || [];
+      const tokenAddr = await blockchain.deployTokenForMerchant(user.walletAddress || "0x0", businessName.slice(0, 5).toUpperCase(), `${businessName} Token`);
+
+      await prisma.merchant.create({
+        data: {
+          userId: user.id, businessName, registrationNo: registrationNo || "",
+          citizenshipPhoto, documents: JSON.stringify(documents),
+          kybStatus: "APPROVED", tokenContract: tokenAddr, tokenSymbol: businessName.slice(0, 5).toUpperCase(), exchangeRate: 100, feeRate: 5,
+        },
+      });
+      user = await prisma.user.update({ where: { id: user.id }, data: { isMerchant: true } });
+    }
+
+    const token = sign({ userId: user.id, walletAddress: user.walletAddress, isMerchant: user.isMerchant });
+    const fullUser = await prisma.user.findUnique({ where: { id: user.id }, include: { merchant: true } });
+    res.json({ token, user: fullUser });
+  } catch (err) {
+    console.error("Register error:", err);
+    res.status(500).json({ error: err.message || "Registration failed" });
+  }
+});
 
 router.post("/signup", async (req, res) => {
   const { walletAddress, email, name } = req.body;
@@ -21,7 +79,7 @@ router.post("/login", async (req, res) => {
   const { walletAddress, token: privyToken, businessName, registrationNo } = req.body;
   try {
     if (privyToken) {
-      const { payload } = await jwtVerify(privyToken, privyJWKS, { issuer: "privy.io", audience: process.env.PRIVY_APP_ID });
+      const payload = await verifyPrivyToken(privyToken);
       let user = await prisma.user.findUnique({ where: { privyUserId: payload.sub } });
       if (!user) {
         user = await prisma.user.create({ data: { privyUserId: payload.sub, walletAddress: payload.wallet || payload.wallets?.[0]?.address || null, email: payload.email || null } });
