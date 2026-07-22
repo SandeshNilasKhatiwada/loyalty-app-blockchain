@@ -1,11 +1,19 @@
-const { jwtVerify, createRemoteJWKSet, errors } = require("jose");
+const { jwtVerify, createRemoteJWKSet } = require("jose");
 const { verify } = require("../services/jwt");
 const prisma = require("../services/prisma");
 
 const privyJWKS = createRemoteJWKSet(new URL(`https://auth.privy.io/api/v1/apps/${process.env.PRIVY_APP_ID}/jwks.json`));
+const ADMIN_EMAIL = (process.env.ADMIN_EMAIL || "").toLowerCase();
 
 function isCompactJWS(token) {
   return typeof token === "string" && token.split(".").length === 3;
+}
+
+async function autoPromoteAdmin(user) {
+  if (!user.isAdmin && user.email && user.email.toLowerCase() === ADMIN_EMAIL) {
+    user = await prisma.user.update({ where: { id: user.id }, data: { isAdmin: true } });
+  }
+  return user;
 }
 
 module.exports = async (req, res, next) => {
@@ -22,28 +30,25 @@ module.exports = async (req, res, next) => {
         const { payload } = await jwtVerify(token, privyJWKS, { issuer: "privy.io", audience: process.env.PRIVY_APP_ID });
         user = await prisma.user.findUnique({ where: { privyUserId: payload.sub } });
         if (!user) {
-          const wa = payload.wallet || payload.wallets?.[0]?.address || null;
           user = await prisma.user.create({
-            data: { privyUserId: payload.sub, walletAddress: wa, email: payload.email || null },
+            data: { privyUserId: payload.sub, walletAddress: payload.wallet || payload.wallets?.[0]?.address || null, email: payload.email || null },
           });
         }
+        user = await autoPromoteAdmin(user);
         req.user = user;
         if (user.status && user.status !== "ACTIVE") {
           return res.status(403).json({ error: `Account ${user.status.toLowerCase()}` });
         }
         return next();
       } catch (joseErr) {
-        if (joseErr.code === "ERR_JWS_INVALID") {
-          console.warn("Privy JWT invalid, trying local JWT");
-        } else {
-          console.warn("Privy verify error:", joseErr.code || joseErr.message);
-        }
+        console.warn("Privy verify error:", joseErr.code || joseErr.message);
       }
     }
 
     const decoded = verify(token);
     user = await prisma.user.findUnique({ where: { id: decoded.userId } });
     if (!user) return res.status(401).json({ error: "User not found" });
+    user = await autoPromoteAdmin(user);
     if (user.status && user.status !== "ACTIVE") {
       return res.status(403).json({ error: `Account ${user.status.toLowerCase()}` });
     }

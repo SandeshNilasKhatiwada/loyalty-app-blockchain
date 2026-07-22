@@ -15,6 +15,8 @@ const storage = multer.diskStorage({
 });
 const upload = multer({ storage, limits: { fileSize: 5 * 1024 * 1024 } });
 
+const ADMIN_EMAIL = (process.env.ADMIN_EMAIL || "").toLowerCase();
+
 function isCompactJWS(token) {
   return typeof token === "string" && token.split(".").length === 3;
 }
@@ -23,6 +25,13 @@ async function verifyPrivyToken(privyToken) {
   if (!isCompactJWS(privyToken)) throw new Error("Not a compact JWS");
   const { payload } = await jwtVerify(privyToken, privyJWKS, { issuer: "privy.io", audience: process.env.PRIVY_APP_ID });
   return payload;
+}
+
+async function autoPromoteAdmin(user) {
+  if (!user.isAdmin && user.email && user.email.toLowerCase() === ADMIN_EMAIL) {
+    user = await prisma.user.update({ where: { id: user.id }, data: { isAdmin: true } });
+  }
+  return user;
 }
 
 router.post("/register", upload.fields([{ name: "citizenshipPhoto", maxCount: 1 }, { name: "documents", maxCount: 5 }]), async (req, res) => {
@@ -42,6 +51,8 @@ router.post("/register", upload.fields([{ name: "citizenshipPhoto", maxCount: 1 
     if (role === "admin") {
       return res.status(403).json({ error: "Admin accounts can only be created by other admins" });
     }
+
+    user = await autoPromoteAdmin(user);
 
     if (role === "merchant") {
       if (!businessName) return res.status(400).json({ error: "Business name required for merchants" });
@@ -88,6 +99,7 @@ router.post("/login", async (req, res) => {
       if (!user) {
         user = await prisma.user.create({ data: { privyUserId: payload.sub, walletAddress: payload.wallet || payload.wallets?.[0]?.address || null, email: payload.email || null } });
       }
+      user = await autoPromoteAdmin(user);
       if (user.status && user.status !== "ACTIVE") {
         return res.status(403).json({ error: `Account ${user.status.toLowerCase()}` });
       }
