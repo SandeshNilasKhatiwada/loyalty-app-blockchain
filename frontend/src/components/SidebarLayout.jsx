@@ -4,7 +4,7 @@ import { usePrivy } from "@privy-io/react-auth";
 import { useAuth } from "../contexts/AuthContext";
 import { cn } from "../lib/utils";
 import {
-  LayoutDashboard, Store, Shield, Menu, X, LogOut, Coins, Gift, History, Users, CheckCircle,
+  LayoutDashboard, Store, Shield, Menu, X, LogOut, Repeat, Users, BadgeCheck, Clock,
 } from "lucide-react";
 
 export default function SidebarLayout({ children }) {
@@ -17,24 +17,23 @@ export default function SidebarLayout({ children }) {
   const isUser = !user?.isMerchant && !user?.isAdmin;
   const isMerchant = !!user?.isMerchant;
   const isAdmin = !!user?.isAdmin;
+  const merchantStatus = user?.merchant?.kybStatus;
 
   const navItems = [];
 
-  if (isUser || isMerchant) {
+  if (isAdmin) {
     navItems.push({ to: "/dashboard", label: "Dashboard", icon: LayoutDashboard });
-  }
-
-  if (isUser) {
-    navItems.push({ to: "/merchants", label: "Find Merchants", icon: Store });
+    navItems.push({ to: "/admin", label: "Admin Panel", icon: Shield });
   }
 
   if (isMerchant) {
+    navItems.push({ to: "/dashboard", label: "Dashboard", icon: LayoutDashboard });
     navItems.push({ to: "/merchant", label: "Merchant Panel", icon: Store });
   }
 
-  if (isAdmin) {
-    navItems.push({ to: "/admin", label: "Admin", icon: Shield });
+  if (isUser) {
     navItems.push({ to: "/dashboard", label: "Dashboard", icon: LayoutDashboard });
+    navItems.push({ to: "/merchants", label: "Find Merchants", icon: Store });
   }
 
   const handleLogout = async () => {
@@ -45,6 +44,13 @@ export default function SidebarLayout({ children }) {
   };
 
   const active = (to) => location.pathname === to || (to !== "/" && location.pathname.startsWith(to));
+
+  const roleBadge = () => {
+    if (isAdmin) return { label: "Admin", color: "bg-purple-100 text-purple-800" };
+    if (isMerchant) return { label: merchantStatus === "APPROVED" ? "Merchant" : "Pending Merchant", color: merchantStatus === "APPROVED" ? "bg-green-100 text-green-800" : "bg-yellow-100 text-yellow-800" };
+    return { label: "User", color: "bg-blue-100 text-blue-800" };
+  };
+  const badge = roleBadge();
 
   return (
     <div className="min-h-screen bg-gray-50 flex">
@@ -80,8 +86,14 @@ export default function SidebarLayout({ children }) {
           ))}
         </nav>
 
-        <div className="border-t border-gray-200 p-3 space-y-2">
-          <div className="px-3 py-2 text-xs text-gray-500 truncate">{user?.email || user?.walletAddress?.slice(0, 10) || "User"}</div>
+        <div className="border-t border-gray-200 p-3 space-y-3">
+          <div className="px-3 flex items-center gap-2">
+            <span className={cn("inline-flex items-center rounded-full px-2.5 py-0.5 text-xs font-medium", badge.color)}>
+              {badge.label === "Pending Merchant" ? <Clock className="w-3 h-3 mr-1" /> : <BadgeCheck className="w-3 h-3 mr-1" />}
+              {badge.label}
+            </span>
+          </div>
+          <div className="px-3 text-xs text-gray-500 truncate">{user?.email || ""}</div>
           <button
             onClick={handleLogout}
             className="flex items-center gap-3 w-full px-3 py-2.5 rounded-lg text-sm font-medium text-red-600 hover:bg-red-50 transition-colors"
@@ -98,7 +110,10 @@ export default function SidebarLayout({ children }) {
             <Menu className="w-5 h-5" />
           </button>
           <div className="flex-1" />
-          <span className="text-sm text-gray-500 truncate max-w-[200px] hidden sm:block">
+          <span className="hidden sm:inline-flex items-center gap-1.5 text-xs font-medium px-2.5 py-1 rounded-full mr-2 bg-gray-100 text-gray-700">
+            {badge.label}
+          </span>
+          <span className="text-sm text-gray-500 truncate max-w-[160px] hidden sm:block">
             {user?.email || ""}
           </span>
           <button

@@ -1,18 +1,18 @@
 import { Link } from "react-router-dom";
 import { useAuth } from "../contexts/AuthContext";
 import { Button } from "../components/ui/button";
-import { Coins, Repeat, Award, Gift, Shield, ArrowRight, Sparkles } from "lucide-react";
+import { Coins, Award, Gift, Store, ArrowRight, Sparkles, Shield } from "lucide-react";
 
 export default function Landing() {
   const { user } = useAuth();
 
   const features = [
     { icon: Coins, title: "Earn Loyalty Points", desc: "Get rewarded every time you shop at partnered merchants" },
-    { icon: Repeat, title: "Swap Tokens", desc: "Exchange your loyalty tokens for other cryptocurrencies via Uniswap" },
-    { icon: Award, title: "Merchant Tools", desc: "Create and manage your own loyalty token for your business" },
-    { icon: Gift, title: "Redeem Rewards", desc: "Use your points across the entire LoyalChain network" },
-    { icon: Shield, title: "Blockchain Secure", desc: "All transactions recorded on-chain for full transparency" },
-    { icon: Sparkles, title: "Email Login", desc: "No wallet needed — just sign in with your email" },
+    { icon: Gift, title: "Redeem Anywhere", desc: "Use your points across the entire merchant network — not just one store" },
+    { icon: Award, title: "Merchant Tools", desc: "Create and manage your own loyalty program with easy tools" },
+    { icon: Store, title: "Multi-Merchant Network", desc: "Points earned at one merchant can be used at any other" },
+    { icon: Shield, title: "Simple & Secure", desc: "Just use your email — no crypto wallet or blockchain knowledge needed" },
+    { icon: Sparkles, title: "Email Login", desc: "Sign in with just your email via magic link" },
   ];
 
   return (

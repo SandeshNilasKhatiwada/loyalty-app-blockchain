@@ -9,9 +9,8 @@ import api from "../services/api";
 import { User, Store, ShieldCheck, ArrowLeft, Upload, CheckCircle, AlertCircle, ArrowRight } from "lucide-react";
 
 const ROLES = [
-  { key: "user", label: "Regular User", icon: User, desc: "Earn and redeem loyalty points" },
-  { key: "merchant", label: "Merchant", icon: Store, desc: "Create and manage your own loyalty program" },
-  { key: "admin", label: "Admin", icon: ShieldCheck, desc: "Platform administrator" },
+  { key: "user", label: "Regular User", icon: User, desc: "Earn and redeem loyalty points across all merchants" },
+  { key: "merchant", label: "Merchant", icon: Store, desc: "Create your own loyalty program and manage customers" },
 ];
 
 export default function Register() {

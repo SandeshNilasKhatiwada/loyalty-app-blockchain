@@ -4,7 +4,7 @@ import { Button } from "../components/ui/button";
 import { Input, Label } from "../components/ui/input";
 import { Badge } from "../components/ui/table";
 import { points, merchant as merchantApi, transactions, analytics } from "../services/endpoints";
-import { Award, Gift, Coins, TrendingUp, Users, CheckCircle, AlertCircle, Store, Wallet, CreditCard, Landmark } from "lucide-react";
+import { Award, Gift, Coins, TrendingUp, Users, CheckCircle, AlertCircle, Store, Wallet, CreditCard, Landmark, Clock, XCircle } from "lucide-react";
 
 const PAY_METHODS = [
   { key: "esewa", label: "eSewa", icon: CreditCard },
@@ -43,6 +43,8 @@ export default function MerchantPanel() {
   const [topupMethod, setTopupMethod] = useState("esewa");
   const [topupLoading, setTopupLoading] = useState(false);
   const [topupResult, setTopupResult] = useState(null);
+
+  const merchantStatus = merchantData?.kybStatus;
 
   useEffect(() => { loadOverview(); }, []);
 
@@ -106,6 +108,8 @@ export default function MerchantPanel() {
     setTopupLoading(false);
   };
 
+  const notApproved = merchantData && merchantData.kybStatus !== "APPROVED";
+
   return (
     <div className="space-y-6">
       <div className="flex items-center gap-2">
@@ -113,6 +117,31 @@ export default function MerchantPanel() {
         <h1 className="text-2xl font-bold">Merchant Panel</h1>
       </div>
 
+      {merchantData && merchantData.kybStatus === "PENDING" && (
+        <Card className="bg-yellow-50 border-yellow-200">
+          <CardContent className="pt-4 flex items-center gap-3">
+            <Clock className="w-6 h-6 text-yellow-600 shrink-0" />
+            <div>
+              <p className="font-medium text-yellow-800">Application Pending</p>
+              <p className="text-sm text-yellow-700">Your merchant registration is under review. You'll be able to operate once approved.</p>
+            </div>
+          </CardContent>
+        </Card>
+      )}
+
+      {merchantData && merchantData.kybStatus === "REJECTED" && (
+        <Card className="bg-red-50 border-red-200">
+          <CardContent className="pt-4 flex items-center gap-3">
+            <XCircle className="w-6 h-6 text-red-600 shrink-0" />
+            <div>
+              <p className="font-medium text-red-800">Application Rejected</p>
+              <p className="text-sm text-red-700">Your merchant application was not approved. Contact the admin.</p>
+            </div>
+          </CardContent>
+        </Card>
+      )}
+
+      {(!merchantData || merchantData.kybStatus === "APPROVED") && (<>
       <div className="flex gap-2 flex-wrap">
         {TABS.map((t) => (
           <Button key={t.key} variant={tab === t.key ? "default" : "outline"} size="sm" onClick={() => { setTab(t.key); setError(""); setSuccess(""); }}>
@@ -291,6 +320,7 @@ export default function MerchantPanel() {
           </CardContent>
         </Card>
       )}
+      </>)}
     </div>
   );
 }
