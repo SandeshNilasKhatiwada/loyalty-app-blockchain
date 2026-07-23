@@ -112,6 +112,10 @@ router.get("/history", auth, async (req, res) => {
   }
   const transactions = await prisma.transaction.findMany({
     where,
+    include: {
+      merchant: { select: { businessName: true } },
+      user: { select: { email: true, name: true } },
+    },
     orderBy: { createdAt: "desc" },
     take: 50,
   });

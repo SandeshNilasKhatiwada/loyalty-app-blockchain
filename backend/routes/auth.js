@@ -103,10 +103,11 @@ router.post("/login", async (req, res) => {
       if (user.status && user.status !== "ACTIVE") {
         return res.status(403).json({ error: `Account ${user.status.toLowerCase()}` });
       }
-      return res.json({ token: sign({ userId: user.id, walletAddress: user.walletAddress, isMerchant: user.isMerchant }), user });
+      const fullUser = await prisma.user.findUnique({ where: { id: user.id }, include: { merchant: true } });
+      return res.json({ token: sign({ userId: user.id, walletAddress: user.walletAddress, isMerchant: user.isMerchant }), user: fullUser });
     }
     if (!walletAddress) return res.status(400).json({ error: "Provide walletAddress or token" });
-    const user = await prisma.user.findUnique({ where: { walletAddress } });
+    let user = await prisma.user.findUnique({ where: { walletAddress }, include: { merchant: true } });
     if (!user) return res.status(404).json({ error: "User not found" });
     if (user.status && user.status !== "ACTIVE") {
       return res.status(403).json({ error: `Account ${user.status.toLowerCase()}` });
