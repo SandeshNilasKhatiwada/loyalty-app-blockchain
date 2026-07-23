@@ -7,57 +7,68 @@ datasource db {
 }
 
 model User {
-  id            String   @id @default(cuid())
-  privyUserId   String?  @unique
-  walletAddress String?  @unique
-  email         String?
-  name          String?
-  isMerchant    Boolean  @default(false)
-  isAdmin       Boolean  @default(false)
-  status        String   @default("ACTIVE")
-  pointsBalance BigInt   @default(0)
-  createdAt     DateTime @default(now())
-  updatedAt     DateTime @updatedAt
-
-  merchant      Merchant?
-  transactions  Transaction[]
-  pendingAwards PendingAward[]
+  id          String   @id @default(cuid())
+  privyUserId String?  @unique
+  email       String?  @unique
+  name        String?
+  isAdmin     Boolean  @default(false)
+  status      String   @default("ACTIVE")
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
 }
 
 model Merchant {
-  id              String   @id @default(cuid())
-  userId          String   @unique
-  user            User     @relation(fields: [userId], references: [id])
-  businessName    String
-  ownerName       String?
-  registrationNo  String?
-  address         String?
-  citizenshipPhoto String?
-  documents       String?
-  kybStatus       String   @default("PENDING")
-  tokenContract   String?
-  tokenSymbol     String?
-  tokenName       String?
-  exchangeRate    Int      @default(100)
-  feeRate         Int      @default(5)
-  tokenBalance    BigInt   @default(0)
-  createdAt       DateTime @default(now())
-  updatedAt       DateTime @updatedAt
+  id               String   @id @default(cuid())
+  businessName     String
+  legalBusinessName String?
+  email            String   @unique
+  phone            String?
+  privyUserId      String   @unique
+  embeddedWalletId String?  @unique
+  walletAddress    String?  @unique
+  country          String?
+  currency         String?
+  website          String?
+  logo             String?
+  isVerified       Boolean  @default(false)
+  kybStatus        String?
+  plan             String   @default("FREE")
+  status           String   @default("ACTIVE")
+  tokenBalance     BigInt   @default(0)
+  tokenContract    String?
+  exchangeRate     Int      @default(100)
+  feeRate          Int      @default(5)
+  lastLoginAt      DateTime?
+  createdAt        DateTime @default(now())
+  updatedAt        DateTime @updatedAt
 
   transactions    Transaction[]
   pendingAwards   PendingAward[]
 }
 
+model Customer {
+  id            String   @id @default(cuid())
+  email         String   @unique
+  name          String?
+  phone         String?
+  pointsBalance BigInt   @default(0)
+  createdAt     DateTime @default(now())
+  updatedAt     DateTime @updatedAt
+
+  pendingAwards PendingAward[]
+  transactions  Transaction[]
+}
+
 model PendingAward {
-  id          String   @id @default(cuid())
-  merchantId  String
-  merchant    Merchant @relation(fields: [merchantId], references: [id])
-  customerId  String
-  customer    User     @relation(fields: [customerId], references: [id])
-  amount      String
-  status      String   @default("PENDING")
-  createdAt   DateTime @default(now())
-  updatedAt   DateTime @updatedAt
+  id         String   @id @default(cuid())
+  merchantId String
+  merchant   Merchant @relation(fields: [merchantId], references: [id])
+  customerId String
+  customer   Customer @relation(fields: [customerId], references: [id])
+  amount     String
+  status     String   @default("PENDING")
+  createdAt  DateTime @default(now())
+  updatedAt  DateTime @updatedAt
 }
 
 model Transaction {
@@ -70,9 +81,8 @@ model Transaction {
   tokenContract String?
   status        String   @default("CONFIRMED")
   merchantId    String?
-  userId        String?
-  createdAt     DateTime @default(now())
-
   merchant      Merchant? @relation(fields: [merchantId], references: [id])
-  user          User?     @relation(fields: [userId], references: [id])
+  customerId    String?
+  customer      Customer? @relation(fields: [customerId], references: [id])
+  createdAt     DateTime @default(now())
 }

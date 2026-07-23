@@ -18,6 +18,13 @@ const REGISTRY_ABI = [
   "function merchantToToken(address) view returns (address)",
 ];
 
+const DATA_REGISTRY_ABI = [
+  "function setDataHash(address user, bytes32 hash) external",
+  "function getDataHash(address user) view returns (bytes32)",
+  "function setKycHash(address merchant, bytes32 hash) external",
+  "function getKycHash(address merchant) view returns (bytes32)",
+];
+
 let provider, wallet, providerReady = false, addresses = {};
 try {
   addresses = require("fs").existsSync(__dirname + "/../contract-addresses.json")
@@ -76,7 +83,42 @@ async function getBalance(tokenAddr, address) {
   return (await token.balanceOf(address)).toString();
 }
 
+async function storeDataHash(userAddress, hash) {
+  if (!addresses?.dataRegistry || !providerReady) return mockTx();
+  try {
+    const registry = new ethers.Contract(addresses.dataRegistry, DATA_REGISTRY_ABI, wallet);
+    return (await registry.setDataHash(userAddress, hash)).wait();
+  } catch { return mockTx(); }
+}
+
+async function getDataHash(userAddress) {
+  if (!addresses?.dataRegistry || !providerReady) return null;
+  try {
+    const registry = new ethers.Contract(addresses.dataRegistry, DATA_REGISTRY_ABI, provider);
+    const hash = await registry.getDataHash(userAddress);
+    return hash !== ethers.ZeroHash ? hash : null;
+  } catch { return null; }
+}
+
+async function storeKycHash(merchantAddress, hash) {
+  if (!addresses?.dataRegistry || !providerReady) return mockTx();
+  try {
+    const registry = new ethers.Contract(addresses.dataRegistry, DATA_REGISTRY_ABI, wallet);
+    return (await registry.setKycHash(merchantAddress, hash)).wait();
+  } catch { return mockTx(); }
+}
+
+async function getKycHash(merchantAddress) {
+  if (!addresses?.dataRegistry || !providerReady) return null;
+  try {
+    const registry = new ethers.Contract(addresses.dataRegistry, DATA_REGISTRY_ABI, provider);
+    const hash = await registry.getKycHash(merchantAddress);
+    return hash !== ethers.ZeroHash ? hash : null;
+  } catch { return null; }
+}
+
 module.exports = {
   deployTokenForMerchant, addMerchantToRegistry,
   mintTokens, burnTokens, burnFromCustomer, getBalance,
+  storeDataHash, getDataHash, storeKycHash, getKycHash,
 };

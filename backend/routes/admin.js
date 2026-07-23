@@ -1,118 +1,111 @@
 const router = require("express").Router();
+const { ethers } = require("ethers");
 const prisma = require("../services/prisma");
 const blockchain = require("../services/blockchain");
 const auth = require("../middleware/auth");
-const admin = require("../middleware/admin");
 
-router.get("/merchants/pending", auth, admin, async (req, res) => {
+function requireAdmin(req, res, next) {
+  if (!req.user || !req.user.isAdmin) return res.status(403).json({ error: "Admin only" });
+  next();
+}
+
+// Get pending merchants
+router.get("/merchants/pending", auth, requireAdmin, async (req, res) => {
   const merchants = await prisma.merchant.findMany({
     where: { kybStatus: "PENDING" },
-    include: { user: { select: { walletAddress: true, email: true, name: true } } },
+    orderBy: { createdAt: "desc" },
   });
   res.json({ merchants });
 });
 
-router.patch("/merchants/:id/approve", auth, admin, async (req, res) => {
-  const merchant = await prisma.merchant.findUnique({ where: { id: req.params.id }, include: { user: true } });
-  if (!merchant) return res.status(404).json({ error: "Not found" });
+// Approve merchant
+router.patch("/merchants/:id/approve", auth, requireAdmin, async (req, res) => {
+  const merchant = await prisma.merchant.findUnique({ where: { id: req.params.id } });
+  if (!merchant) return res.status(404).json({ error: "Merchant not found" });
   if (merchant.kybStatus === "APPROVED") return res.status(400).json({ error: "Already approved" });
 
-  const symbol = req.body.tokenSymbol || merchant.businessName.slice(0, 5).toUpperCase();
-  const name = req.body.tokenName || `${merchant.businessName} Token`;
-  const tokenAddr = await blockchain.deployTokenForMerchant(merchant.user.walletAddress || "0x0", name, symbol);
+  const symbol = (merchant.businessName || "TKN").slice(0, 5).toUpperCase();
+  const name = `${merchant.businessName} Token`;
+
+  let tokenAddr = null;
+  try {
+    tokenAddr = await blockchain.deployTokenForMerchant(merchant.walletAddress || "0x0", name, symbol);
+  } catch (e) {
+    console.warn("Token deploy failed (mock mode):", e.message);
+  }
 
   const updated = await prisma.merchant.update({
     where: { id: merchant.id },
-    data: { kybStatus: "APPROVED", tokenContract: tokenAddr, tokenName: name, tokenSymbol: symbol },
-  });
-
-  await prisma.transaction.create({
-    data: { txHash: "DEPLOY:" + Date.now(), type: "DEPLOY", fromAddress: merchant.user.walletAddress || "0x0", toAddress: tokenAddr, amount: "0", tokenContract: tokenAddr, merchantId: merchant.id },
+    data: {
+      kybStatus: "APPROVED",
+      tokenContract: tokenAddr,
+      isVerified: true,
+    },
   });
 
   res.json({ success: true, merchant: updated });
 });
 
-router.patch("/merchants/:id/reject", auth, admin, async (req, res) => {
-  const merchant = await prisma.merchant.update({ where: { id: req.params.id }, data: { kybStatus: "REJECTED" } });
-  res.json({ success: true, merchant });
+// Reject merchant
+router.patch("/merchants/:id/reject", auth, requireAdmin, async (req, res) => {
+  const updated = await prisma.merchant.update({
+    where: { id: req.params.id },
+    data: { kybStatus: "REJECTED" },
+  });
+  res.json({ success: true, merchant: updated });
 });
 
-router.get("/merchants", auth, admin, async (req, res) => {
+// Get all merchants
+router.get("/merchants", auth, requireAdmin, async (req, res) => {
   const merchants = await prisma.merchant.findMany({
-    include: { user: { select: { walletAddress: true, email: true, name: true, isMerchant: true, isAdmin: true, status: true } } },
     orderBy: { createdAt: "desc" },
   });
   res.json({ merchants });
 });
 
-router.get("/users", auth, admin, async (req, res) => {
-  const users = await prisma.user.findMany({
-    include: { merchant: { select: { businessName: true, kybStatus: true } } },
-    orderBy: { createdAt: "desc" },
+// Buy tokens for a merchant (admin)
+router.post("/merchants/:id/topup", auth, requireAdmin, async (req, res) => {
+  const { amountNPR } = req.body;
+  if (!amountNPR || +amountNPR <= 0) return res.status(400).json({ error: "Invalid amount" });
+
+  const merchant = await prisma.merchant.findUnique({ where: { id: req.params.id } });
+  if (!merchant) return res.status(404).json({ error: "Merchant not found" });
+
+  const exchangeRate = merchant.exchangeRate || 100;
+  const feeRate = merchant.feeRate || 5;
+  const grossTokens = Math.floor((+amountNPR * exchangeRate) / 100);
+  const fee = Math.floor((grossTokens * feeRate) / 100);
+  const netTokens = grossTokens - fee;
+
+  const updated = await prisma.merchant.update({
+    where: { id: merchant.id },
+    data: { tokenBalance: { increment: BigInt(netTokens) } },
   });
-  res.json({ users });
-});
 
-router.patch("/users/:id/set-admin", auth, admin, async (req, res) => {
-  const target = await prisma.user.findUnique({ where: { id: req.params.id } });
-  if (!target) return res.status(404).json({ error: "User not found" });
-  const updated = await prisma.user.update({
-    where: { id: req.params.id },
-    data: { isAdmin: true },
+  await prisma.transaction.create({
+    data: {
+      txHash: "TOPUP:" + Date.now() + ":" + merchant.id,
+      type: "TOPUP",
+      fromAddress: "admin",
+      toAddress: merchant.email,
+      amount: netTokens.toString(),
+      merchantId: merchant.id,
+    },
   });
-  res.json({ success: true, user: updated });
+
+  res.json({ success: true, netTokens, fee, amountNPR: +amountNPR, merchant: updated });
 });
 
-router.patch("/users/:id/block", auth, admin, async (req, res) => {
-  const target = await prisma.user.findUnique({ where: { id: req.params.id } });
-  if (!target) return res.status(404).json({ error: "User not found" });
-  const updated = await prisma.user.update({
-    where: { id: req.params.id },
-    data: { status: "BLOCKED" },
-  });
-  res.json({ success: true, user: updated });
-});
-
-router.patch("/users/:id/suspend", auth, admin, async (req, res) => {
-  const target = await prisma.user.findUnique({ where: { id: req.params.id } });
-  if (!target) return res.status(404).json({ error: "User not found" });
-  const updated = await prisma.user.update({
-    where: { id: req.params.id },
-    data: { status: "SUSPENDED" },
-  });
-  res.json({ success: true, user: updated });
-});
-
-router.patch("/users/:id/activate", auth, admin, async (req, res) => {
-  const target = await prisma.user.findUnique({ where: { id: req.params.id } });
-  if (!target) return res.status(404).json({ error: "User not found" });
-  const updated = await prisma.user.update({
-    where: { id: req.params.id },
-    data: { status: "ACTIVE" },
-  });
-  res.json({ success: true, user: updated });
-});
-
-router.delete("/users/:id", auth, admin, async (req, res) => {
-  const target = await prisma.user.findUnique({ where: { id: req.params.id }, include: { merchant: true } });
-  if (!target) return res.status(404).json({ error: "User not found" });
-  await prisma.transaction.deleteMany({ where: { userId: req.params.id } });
-  if (target.merchant) await prisma.merchant.delete({ where: { id: target.merchant.id } });
-  await prisma.user.delete({ where: { id: req.params.id } });
-  res.json({ success: true });
-});
-
-router.get("/stats", auth, admin, async (req, res) => {
-  const [users, activeUsers, blockedUsers, merchants, transactions, approved] = await Promise.all([
-    prisma.user.count(),
-    prisma.user.count({ where: { status: "ACTIVE" } }),
-    prisma.user.count({ where: { status: { in: ["BLOCKED", "SUSPENDED"] } } }),
+// Get stats
+router.get("/stats", auth, requireAdmin, async (req, res) => {
+  const [totalMerchants, approvedMerchants, pendingMerchants, totalCustomers, totalTransactions] = await Promise.all([
     prisma.merchant.count(),
-    prisma.transaction.count(),
     prisma.merchant.count({ where: { kybStatus: "APPROVED" } }),
+    prisma.merchant.count({ where: { kybStatus: "PENDING" } }),
+    prisma.customer.count(),
+    prisma.transaction.count(),
   ]);
-  res.json({ stats: { users: activeUsers, totalUsers: users, blockedUsers, merchants, transactions, approved } });
+  res.json({ stats: { totalMerchants, approvedMerchants, pendingMerchants, totalCustomers, totalTransactions } });
 });
 
 module.exports = router;

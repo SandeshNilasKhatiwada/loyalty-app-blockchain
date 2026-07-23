@@ -28,7 +28,8 @@ export default function Login() {
     setError("");
     try {
       const token = await getAccessToken();
-      const r = await api.post("/auth/login", { token });
+      const userEmail = privyUser?.email?.address || privyUser?.email || "";
+      const r = await api.post("/auth/login", { token, email: userEmail });
       appLogin(r.data.token, r.data.user);
       setLoading(false);
     } catch (e) {

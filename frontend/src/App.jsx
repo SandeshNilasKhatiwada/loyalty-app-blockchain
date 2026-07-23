@@ -1,36 +1,41 @@
 import { Routes, Route, Navigate } from "react-router-dom";
 import { useAuth } from "./contexts/AuthContext";
 import Landing from "./pages/Landing";
-import Login from "./pages/Login";
-import Register from "./pages/Register";
-import Dashboard from "./pages/Dashboard";
-import Swap from "./pages/Swap";
-import MerchantPanel from "./pages/MerchantPanel";
-import Admin from "./pages/Admin";
-import Merchants from "./pages/Merchants";
-import ApplyMerchant from "./pages/ApplyMerchant";
+import MerchantAuth from "./pages/MerchantAuth";
+import AdminLogin from "./pages/AdminLogin";
+import MerchantDashboard from "./pages/MerchantDashboard";
+import AdminPanel from "./pages/AdminPanel";
 import SidebarLayout from "./components/SidebarLayout";
 
-function P({ children }) {
-  const { user, loading } = useAuth();
-  if (loading) return <div className="min-h-screen flex items-center justify-center"><div className="animate-spin rounded-full h-8 w-8 border-b-2 border-blue-600" /></div>;
-  return user ? children : <Navigate to="/login" replace />;
+function AppShell({ children }) {
+  return <SidebarLayout>{children}</SidebarLayout>;
 }
 
 export default function App() {
-  const { user } = useAuth();
+  const { merchant, user, loading } = useAuth();
+  if (loading) return <div className="min-h-screen flex items-center justify-center"><div className="animate-spin rounded-full h-8 w-8 border-b-2 border-blue-600" /></div>;
+
   return (
     <Routes>
-      <Route path="/" element={user ? <Navigate to="/dashboard" /> : <Landing />} />
-      <Route path="/login" element={user ? <Navigate to="/dashboard" /> : <Login />} />
-      <Route path="/register" element={<Register />} />
-      <Route path="/dashboard" element={<P><SidebarLayout><Dashboard /></SidebarLayout></P>} />
-      <Route path="/swap" element={<P><SidebarLayout><Swap /></SidebarLayout></P>} />
-      <Route path="/merchant" element={<P><SidebarLayout><MerchantPanel /></SidebarLayout></P>} />
-      <Route path="/merchants" element={<P><SidebarLayout><Merchants /></SidebarLayout></P>} />
-      <Route path="/admin" element={<P><SidebarLayout><Admin /></SidebarLayout></P>} />
-      <Route path="/apply-merchant" element={<ApplyMerchant />} />
+      <Route path="/" element={user || merchant ? <Navigate to="/dashboard" /> : <Landing />} />
+      <Route path="/merchant/login" element={merchant ? <Navigate to="/merchant/dashboard" /> : <MerchantAuth />} />
+      <Route path="/admin/login" element={user?.isAdmin ? <Navigate to="/admin" /> : <AdminLogin />} />
+      <Route path="/dashboard" element={<AppShell><DashboardContent /></AppShell>} />
+      <Route path="/merchant/dashboard" element={merchant ? <AppShell><MerchantDashboard /></AppShell> : <Navigate to="/merchant/login" />} />
+      <Route path="/admin" element={user?.isAdmin ? <AppShell><AdminPanel /></AppShell> : <Navigate to="/admin/login" />} />
       <Route path="*" element={<Navigate to="/" />} />
     </Routes>
+  );
+}
+
+function DashboardContent() {
+  const { user, merchant } = useAuth();
+  if (user?.isAdmin) return <AdminPanel />;
+  if (merchant) return <MerchantDashboard />;
+  return (
+    <div className="text-center py-20">
+      <h1 className="text-2xl font-bold text-gray-700">Welcome</h1>
+      <p className="text-gray-500 mt-2">Use the sidebar to navigate</p>
+    </div>
   );
 }

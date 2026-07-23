@@ -3,7 +3,7 @@ import { Card, CardContent, CardHeader, CardTitle } from "../components/ui/card"
 import { Button } from "../components/ui/button";
 import { Badge } from "../components/ui/table";
 import { admin as adminApi } from "../services/endpoints";
-import { Shield, CheckCircle, XCircle, Users, Store, Activity, UserCheck, UserX, Trash2, RefreshCw } from "lucide-react";
+import { Shield, CheckCircle, XCircle, Users, Store, Activity, UserCheck, UserX, Trash2, RefreshCw, Fingerprint } from "lucide-react";
 
 const TABS = [
   { key: "stats", label: "Stats", icon: Activity },
@@ -116,13 +116,14 @@ export default function Admin() {
                 <p className="text-gray-500 text-center py-8">No merchants registered</p>
               ) : (
                 <div className="overflow-x-auto">
-                  <table className="w-full text-sm">
+                      <table className="w-full text-sm">
                     <thead>
                       <tr className="border-b text-left text-gray-500">
                         <th className="pb-2 font-medium">Business</th>
                         <th className="pb-2 font-medium hidden sm:table-cell">Owner</th>
                         <th className="pb-2 font-medium hidden md:table-cell">Token</th>
                         <th className="pb-2 font-medium">Status</th>
+                        <th className="pb-2 font-medium hidden lg:table-cell">KYC Hash</th>
                         <th className="pb-2 font-medium hidden sm:table-cell">Date</th>
                       </tr>
                     </thead>
@@ -133,6 +134,15 @@ export default function Admin() {
                           <td className="py-2 pr-4 hidden sm:table-cell text-gray-500">{m.user?.email || m.user?.walletAddress?.slice(0, 10)}...</td>
                           <td className="py-2 pr-4 hidden md:table-cell text-gray-500 font-mono text-xs">{m.tokenSymbol || "-"}</td>
                           <td className="py-2 pr-4">{statusBadge(m.kybStatus)}</td>
+                          <td className="py-2 pr-4 hidden lg:table-cell">
+                            {m.kycHash ? (
+                              <span className="inline-flex items-center gap-1 text-xs text-green-700" title={m.kycHash}>
+                                <Fingerprint className="w-3 h-3" />On-chain
+                              </span>
+                            ) : (
+                              <span className="text-xs text-gray-400">-</span>
+                            )}
+                          </td>
                           <td className="py-2 hidden sm:table-cell text-gray-500">{new Date(m.createdAt).toLocaleDateString()}</td>
                         </tr>
                       ))}

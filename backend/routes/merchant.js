@@ -1,282 +1,210 @@
 const router = require("express").Router();
 const prisma = require("../services/prisma");
+const { sign } = require("../services/jwt");
 const auth = require("../middleware/auth");
 
-function isMerchant(req, res) {
-  if (!req.user.isMerchant) { res.status(403).json({ error: "Merchants only" }); return false; }
-  return true;
+const stripe = require("stripe")(process.env.STRIPE_SECRET_KEY);
+
+function requireMerchant(req, res, next) {
+  if (!req.merchant) return res.status(403).json({ error: "Merchant only" });
+  if (req.merchant.kybStatus !== "APPROVED") return res.status(403).json({ error: "Merchant not approved" });
+  next();
 }
 
-async function getMerchant(userId) {
-  return prisma.merchant.findUnique({ where: { userId } });
-}
-
-// ── Existing topup ──
-router.post("/topup", auth, async (req, res) => {
-  const { amountNPR, method } = req.body;
-  if (!amountNPR || amountNPR <= 0) return res.status(400).json({ error: "Valid amountNPR required" });
-  const paymentMethod = method || "direct";
-  if (!["esewa", "paypal", "stripe", "direct"].includes(paymentMethod)) {
-    return res.status(400).json({ error: "Invalid method. Use esewa, paypal, stripe, or direct" });
-  }
-  try {
-    if (!isMerchant(req, res)) return;
-    const merchant = await getMerchant(req.user.id);
-    if (!merchant || merchant.kybStatus !== "APPROVED") return res.status(403).json({ error: "Not approved" });
-
-    const tokenAmount = Math.floor(amountNPR * (merchant.exchangeRate || 100) / 100);
-    const fee = Math.floor(tokenAmount * (merchant.feeRate || 5) / 100);
-    const net = tokenAmount - fee;
-    if (net <= 0) return res.status(400).json({ error: "Amount too small" });
-
-    const [tx] = await prisma.$transaction([
-      prisma.transaction.create({
-        data: {
-          txHash: "TOPUP:" + Date.now() + ":" + Math.random().toString(36).slice(2, 8),
-          type: "TOPUP",
-          fromAddress: req.user.email || req.user.walletAddress || "merchant",
-          toAddress: "system",
-          amount: net.toString(),
-          merchantId: merchant.id,
-          userId: req.user.id,
-        },
-      }),
-      prisma.merchant.update({
-        where: { id: merchant.id },
-        data: { tokenBalance: { increment: BigInt(net) } },
-      }),
-    ]);
-
-    res.json({ success: true, txHash: tx.txHash, amountNPR, fee, netTokens: net.toString(), method: paymentMethod });
-  } catch (err) { res.status(500).json({ error: err.message }); }
-});
-
-// ── Stripe payment intent ──
-router.post("/create-payment-intent", auth, async (req, res) => {
-  const { amountNPR } = req.body;
-  if (!amountNPR || amountNPR <= 0) return res.status(400).json({ error: "Valid amountNPR required" });
-  try {
-    if (!isMerchant(req, res)) return;
-    const merchant = await getMerchant(req.user.id);
-    if (!merchant || merchant.kybStatus !== "APPROVED") return res.status(403).json({ error: "Not approved" });
-
-    const stripeKey = process.env.STRIPE_SECRET_KEY;
-    if (!stripeKey || !stripeKey.startsWith("sk_")) {
-      return res.json({ mock: true, clientSecret: null, amount: amountNPR, message: "Stripe not configured. Tokens will be credited in mock mode." });
-    }
-
-    const stripe = require("stripe")(stripeKey);
-    const paymentIntent = await stripe.paymentIntents.create({
-      amount: Math.round(amountNPR * 100),
-      currency: "usd",
-      metadata: { merchantId: merchant.id, userId: req.user.id },
-    });
-
-    res.json({ clientSecret: paymentIntent.client_secret, amount: amountNPR, mock: false });
-  } catch (err) { res.status(500).json({ error: err.message }); }
-});
-
-// ── Confirm payment (called after successful Stripe/PayPal payment) ──
-router.post("/confirm-payment", auth, async (req, res) => {
-  const { amountNPR, method, paymentId } = req.body;
-  if (!amountNPR || amountNPR <= 0) return res.status(400).json({ error: "Valid amountNPR required" });
-  try {
-    if (!isMerchant(req, res)) return;
-    const merchant = await getMerchant(req.user.id);
-    if (!merchant || merchant.kybStatus !== "APPROVED") return res.status(403).json({ error: "Not approved" });
-
-    const tokenAmount = Math.floor(amountNPR * (merchant.exchangeRate || 100) / 100);
-    const fee = Math.floor(tokenAmount * (merchant.feeRate || 5) / 100);
-    const net = tokenAmount - fee;
-    if (net <= 0) return res.status(400).json({ error: "Amount too small" });
-
-    const [tx] = await prisma.$transaction([
-      prisma.transaction.create({
-        data: {
-          txHash: paymentId || ("TOPUP:" + Date.now() + ":" + Math.random().toString(36).slice(2, 8)),
-          type: "TOPUP",
-          fromAddress: req.user.email || req.user.walletAddress || "merchant",
-          toAddress: "system",
-          amount: net.toString(),
-          merchantId: merchant.id,
-          userId: req.user.id,
-        },
-      }),
-      prisma.merchant.update({
-        where: { id: merchant.id },
-        data: { tokenBalance: { increment: BigInt(net) } },
-      }),
-    ]);
-
-    res.json({ success: true, txHash: tx.txHash, amountNPR, fee, netTokens: net.toString(), method: method || "stripe" });
-  } catch (err) { res.status(500).json({ error: err.message }); }
-});
-
-// ── Merchant status ──
 router.get("/status", auth, async (req, res) => {
-  const merchant = await prisma.merchant.findUnique({ where: { userId: req.user.id } });
-  if (!merchant) return res.json({ merchant: null });
-  res.json({
-    merchant: {
-      ...merchant,
-      tokenBalance: (merchant.tokenBalance || "0").toString(),
+  if (!req.merchant) return res.status(404).json({ error: "Not a merchant account" });
+  res.json({ merchant: req.merchant });
+});
+
+router.post("/refresh-token", auth, async (req, res) => {
+  if (!req.merchant) return res.status(403).json({ error: "Merchant only" });
+  const token = sign({ merchantId: req.merchant.id, email: req.merchant.email, type: "merchant" });
+  res.json({ token });
+});
+
+router.post("/award", auth, requireMerchant, async (req, res) => {
+  const { customerEmail, amount } = req.body;
+  if (!customerEmail || !amount || +amount <= 0) return res.status(400).json({ error: "Valid email and amount required" });
+
+  const merchant = req.merchant;
+  if (BigInt(merchant.tokenBalance) < BigInt(amount)) {
+    return res.status(400).json({ error: "Insufficient token balance" });
+  }
+
+  let customer = await prisma.customer.findUnique({ where: { email: customerEmail } });
+  if (!customer) {
+    customer = await prisma.customer.create({
+      data: { email: customerEmail, name: customerEmail.split("@")[0] },
+    });
+  }
+
+  await prisma.merchant.update({
+    where: { id: merchant.id },
+    data: { tokenBalance: { decrement: BigInt(amount) } },
+  });
+
+  await prisma.customer.update({
+    where: { id: customer.id },
+    data: { pointsBalance: { increment: BigInt(amount) } },
+  });
+
+  await prisma.transaction.create({
+    data: {
+      txHash: "AWARD:" + Date.now() + ":" + merchant.id + ":" + customer.id,
+      type: "AWARD",
+      fromAddress: merchant.email,
+      toAddress: customerEmail,
+      amount: amount.toString(),
+      merchantId: merchant.id,
+      customerId: customer.id,
     },
   });
+
+  res.json({ success: true, amount: +amount, customerEmail, customerBalance: (BigInt(customer.pointsBalance) + BigInt(amount)).toString() });
 });
 
-// ── Customers who received points from this merchant ──
-router.get("/customers", auth, async (req, res) => {
-  try {
-    if (!isMerchant(req, res)) return;
-    const merchant = await getMerchant(req.user.id);
-    if (!merchant) return res.status(404).json({ error: "Merchant not found" });
+router.get("/customers", auth, requireMerchant, async (req, res) => {
+  const transactions = await prisma.transaction.findMany({
+    where: { merchantId: req.merchant.id, type: "AWARD" },
+    include: { customer: { select: { email: true, name: true, pointsBalance: true } } },
+    orderBy: { createdAt: "desc" },
+  });
 
-    const awards = await prisma.transaction.findMany({
-      where: { merchantId: merchant.id, type: "AWARD" },
-      include: { user: { select: { email: true, name: true, pointsBalance: true } } },
-      orderBy: { createdAt: "desc" },
-    });
-
-    const customerMap = {};
-    for (const tx of awards) {
-      if (!tx.user) continue;
-      const cid = tx.user.email || tx.userId;
-      if (!customerMap[cid]) {
-        customerMap[cid] = {
-          email: tx.user.email || "unknown",
-          name: tx.user.name || "",
-          totalAwarded: 0,
-          totalRedeemed: 0,
-          lastAward: tx.createdAt,
-          user: tx.user,
-        };
-      }
-      customerMap[cid].totalAwarded += parseInt(tx.amount) || 0;
-      if (tx.createdAt > customerMap[cid].lastAward) customerMap[cid].lastAward = tx.createdAt;
+  const customerMap = {};
+  for (const tx of transactions) {
+    if (!tx.customer) continue;
+    const email = tx.customer.email;
+    if (!customerMap[email]) {
+      customerMap[email] = {
+        email,
+        name: tx.customer.name,
+        totalAwarded: BigInt(0),
+        pointsBalance: tx.customer.pointsBalance,
+        lastAward: tx.createdAt,
+      };
     }
-
-    const redeems = await prisma.transaction.findMany({
-      where: { merchantId: merchant.id, type: "REDEEM" },
-      include: { user: { select: { email: true } } },
-    });
-
-    for (const tx of redeems) {
-      if (!tx.user) continue;
-      const cid = tx.user.email || tx.userId;
-      if (customerMap[cid]) {
-        customerMap[cid].totalRedeemed += parseInt(tx.amount) || 0;
-      }
+    customerMap[email].totalAwarded += BigInt(tx.amount);
+    if (tx.createdAt > customerMap[email].lastAward) {
+      customerMap[email].lastAward = tx.createdAt;
     }
+  }
 
-    res.json({ customers: Object.values(customerMap) });
-  } catch (err) { res.status(500).json({ error: err.message }); }
+  const customers = Object.values(customerMap).map((c) => ({
+    ...c,
+    totalAwarded: c.totalAwarded.toString(),
+    pointsBalance: c.pointsBalance.toString(),
+  }));
+
+  res.json({ customers });
 });
 
-// ── Request award (customer-facing, but called by merchant on behalf) ──
-router.post("/request-award", auth, async (req, res) => {
-  const { customerEmail, amount } = req.body;
-  if (!customerEmail || !amount) return res.status(400).json({ error: "customerEmail and amount required" });
+// Create Stripe Checkout Session
+router.post("/create-checkout-session", auth, requireMerchant, async (req, res) => {
+  const { amountNPR } = req.body;
+  if (!amountNPR || +amountNPR <= 0) return res.status(400).json({ error: "Invalid amount" });
+
   try {
-    if (!isMerchant(req, res)) return;
-    const merchant = await getMerchant(req.user.id);
-    if (!merchant || merchant.kybStatus !== "APPROVED") return res.status(403).json({ error: "Not approved" });
-    const customer = await prisma.user.findUnique({ where: { email: customerEmail } });
-    if (!customer) return res.status(404).json({ error: "Customer not found" });
-
-    const pending = await prisma.pendingAward.create({
-      data: { merchantId: merchant.id, customerId: customer.id, amount: amount.toString() },
-    });
-    res.json({ success: true, pendingAward: pending });
-  } catch (err) { res.status(500).json({ error: err.message }); }
-});
-
-// ── List pending awards for merchant ──
-router.get("/pending-awards", auth, async (req, res) => {
-  try {
-    if (!isMerchant(req, res)) return;
-    const merchant = await getMerchant(req.user.id);
-    if (!merchant) return res.status(404).json({ error: "Merchant not found" });
-
-    const pending = await prisma.pendingAward.findMany({
-      where: { merchantId: merchant.id, status: "PENDING" },
-      include: { customer: { select: { email: true, name: true, pointsBalance: true } } },
-      orderBy: { createdAt: "desc" },
-    });
-    res.json({ pendingAwards: pending });
-  } catch (err) { res.status(500).json({ error: err.message }); }
-});
-
-// ── Approve a pending award ──
-router.post("/approve-award", auth, async (req, res) => {
-  const { pendingAwardId } = req.body;
-  if (!pendingAwardId) return res.status(400).json({ error: "pendingAwardId required" });
-  try {
-    if (!isMerchant(req, res)) return;
-    const merchant = await getMerchant(req.user.id);
-    if (!merchant || merchant.kybStatus !== "APPROVED") return res.status(403).json({ error: "Not approved" });
-
-    const pending = await prisma.pendingAward.findUnique({
-      where: { id: pendingAwardId },
-      include: { customer: true },
-    });
-    if (!pending || pending.merchantId !== merchant.id) return res.status(404).json({ error: "Pending award not found" });
-    if (pending.status !== "PENDING") return res.status(400).json({ error: "Already processed" });
-
-    const pts = parseInt(pending.amount);
-    if (BigInt(merchant.tokenBalance || 0) < BigInt(pts)) {
-      return res.status(400).json({ error: "Insufficient token balance" });
-    }
-
-    await prisma.$transaction([
-      prisma.pendingAward.update({ where: { id: pending.id }, data: { status: "APPROVED" } }),
-      prisma.transaction.create({
-        data: {
-          txHash: "AWARD:" + Date.now() + ":" + Math.random().toString(36).slice(2, 8),
-          type: "AWARD",
-          fromAddress: req.user.email || req.user.walletAddress || "merchant",
-          toAddress: pending.customer.email || pending.customer.walletAddress || "customer",
-          amount: pending.amount,
-          merchantId: merchant.id,
-          userId: pending.customer.id,
+    const session = await stripe.checkout.sessions.create({
+      mode: "payment",
+      payment_method_types: ["card"],
+      line_items: [{
+        price_data: {
+          currency: "npr",
+          product_data: { name: "Loyalty Tokens", description: `${amountNPR} NPR worth of loyalty tokens` },
+          unit_amount: +amountNPR * 100, // NPR in paisa
         },
-      }),
-      prisma.merchant.update({ where: { id: merchant.id }, data: { tokenBalance: { decrement: BigInt(pts) } } }),
-      prisma.user.update({ where: { id: pending.customer.id }, data: { pointsBalance: { increment: BigInt(pts) } } }),
-    ]);
+        quantity: 1,
+      }],
+      success_url: `${process.env.CORS_ORIGIN || "http://localhost:5173"}/merchant/dashboard?session_id={CHECKOUT_SESSION_ID}`,
+      cancel_url: `${process.env.CORS_ORIGIN || "http://localhost:5173"}/merchant/dashboard?payment=cancelled`,
+      metadata: { merchantId: req.merchant.id, amountNPR: amountNPR.toString() },
+    });
 
-    res.json({ success: true, amount: pending.amount, customer: pending.customer.email });
-  } catch (err) { res.status(500).json({ error: err.message }); }
+    res.json({ url: session.url, sessionId: session.id });
+  } catch (err) {
+    console.error("Stripe session error:", err);
+    res.status(500).json({ error: err.message });
+  }
 });
 
-// ── Reject a pending award ──
-router.post("/reject-award", auth, async (req, res) => {
-  const { pendingAwardId } = req.body;
-  if (!pendingAwardId) return res.status(400).json({ error: "pendingAwardId required" });
+// Confirm Stripe checkout success and credit tokens
+router.post("/checkout-success", auth, requireMerchant, async (req, res) => {
+  const { sessionId } = req.body;
+  if (!sessionId) return res.status(400).json({ error: "Session ID required" });
+
   try {
-    if (!isMerchant(req, res)) return;
-    const merchant = await getMerchant(req.user.id);
-    if (!merchant) return res.status(404).json({ error: "Merchant not found" });
-    const pending = await prisma.pendingAward.findUnique({ where: { id: pendingAwardId } });
-    if (!pending || pending.merchantId !== merchant.id) return res.status(404).json({ error: "Pending award not found" });
-    await prisma.pendingAward.update({ where: { id: pending.id }, data: { status: "REJECTED" } });
-    res.json({ success: true });
-  } catch (err) { res.status(500).json({ error: err.message }); }
+    const session = await stripe.checkout.sessions.retrieve(sessionId);
+    if (session.payment_status !== "paid") {
+      return res.status(400).json({ error: "Payment not completed" });
+    }
+
+    const merchantId = session.metadata.merchantId;
+    if (merchantId !== req.merchant.id) {
+      return res.status(403).json({ error: "Session doesn't belong to this merchant" });
+    }
+
+    const amountNPR = parseInt(session.metadata.amountNPR);
+    const exchangeRate = req.merchant.exchangeRate || 100;
+    const feeRate = req.merchant.feeRate || 5;
+    const grossTokens = Math.floor((amountNPR * exchangeRate) / 100);
+    const fee = Math.floor((grossTokens * feeRate) / 100);
+    const netTokens = grossTokens - fee;
+
+    const updated = await prisma.merchant.update({
+      where: { id: merchantId },
+      data: { tokenBalance: { increment: BigInt(netTokens) } },
+    });
+
+    await prisma.transaction.create({
+      data: {
+        txHash: "TOPUP:" + sessionId,
+        type: "TOPUP",
+        fromAddress: "stripe",
+        toAddress: req.merchant.email,
+        amount: netTokens.toString(),
+        merchantId,
+      },
+    });
+
+    res.json({ success: true, amountNPR, grossTokens, fee, netTokens, merchant: updated });
+  } catch (err) {
+    console.error("Checkout success error:", err);
+    res.status(500).json({ error: err.message });
+  }
 });
 
-// ── Delete merchant account ──
-router.delete("/account", auth, async (req, res) => {
-  try {
-    if (!isMerchant(req, res)) return;
-    const merchant = await getMerchant(req.user.id);
-    if (!merchant) return res.status(404).json({ error: "Merchant not found" });
-    await prisma.$transaction([
-      prisma.pendingAward.deleteMany({ where: { merchantId: merchant.id } }),
-      prisma.transaction.deleteMany({ where: { merchantId: merchant.id } }),
-      prisma.merchant.delete({ where: { id: merchant.id } }),
-      prisma.user.update({ where: { id: req.user.id }, data: { isMerchant: false } }),
-    ]);
-    res.json({ success: true, message: "Merchant account deleted" });
-  } catch (err) { res.status(500).json({ error: err.message }); }
+// Direct top-up (admin use only, no payment)
+router.post("/topup", auth, async (req, res) => {
+  if (!req.merchant && !req.user?.isAdmin) return res.status(403).json({ error: "Admin or merchant only" });
+  const merchant = req.merchant || await prisma.merchant.findUnique({ where: { id: req.body.merchantId } });
+  if (!merchant) return res.status(404).json({ error: "Merchant not found" });
+
+  const { amountNPR } = req.body;
+  if (!amountNPR || +amountNPR <= 0) return res.status(400).json({ error: "Invalid amount" });
+
+  const exchangeRate = merchant.exchangeRate || 100;
+  const feeRate = merchant.feeRate || 5;
+  const grossTokens = Math.floor((+amountNPR * exchangeRate) / 100);
+  const fee = Math.floor((grossTokens * feeRate) / 100);
+  const netTokens = grossTokens - fee;
+
+  const updated = await prisma.merchant.update({
+    where: { id: merchant.id },
+    data: { tokenBalance: { increment: BigInt(netTokens) } },
+  });
+
+  await prisma.transaction.create({
+    data: {
+      txHash: "TOPUP:" + Date.now() + ":" + merchant.id,
+      type: "TOPUP",
+      fromAddress: req.user?.isAdmin ? "admin" : "stripe",
+      toAddress: merchant.email,
+      amount: netTokens.toString(),
+      merchantId: merchant.id,
+    },
+  });
+
+  res.json({ success: true, amountNPR: +amountNPR, grossTokens, fee, netTokens, merchant: updated });
 });
 
 module.exports = router;

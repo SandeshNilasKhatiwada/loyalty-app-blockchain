@@ -24,30 +24,57 @@ module.exports = async (req, res, next) => {
 
   try {
     let user = null;
+    let merchant = null;
 
     if (isCompactJWS(token)) {
       try {
         const { payload } = await jwtVerify(token, privyJWKS, { issuer: "privy.io", audience: process.env.PRIVY_APP_ID });
         user = await prisma.user.findUnique({ where: { privyUserId: payload.sub } });
-        if (!user) {
-          user = await prisma.user.create({
-            data: { privyUserId: payload.sub, walletAddress: payload.wallet || payload.wallets?.[0]?.address || null, email: payload.email || null },
-          });
-        } else if (payload.email && !user.email) {
+        merchant = await prisma.merchant.findUnique({ where: { privyUserId: payload.sub } });
+        if (!user && !merchant) {
+          const email = payload.email || null;
+          if (email && email.toLowerCase() === ADMIN_EMAIL) {
+            user = await prisma.user.create({
+              data: { privyUserId: payload.sub, email, name: payload.email || "Admin", isAdmin: true },
+            });
+          }
+        }
+        if (user && payload.email && !user.email) {
           user = await prisma.user.update({ where: { id: user.id }, data: { email: payload.email } });
+          user = await autoPromoteAdmin(user);
         }
-        user = await autoPromoteAdmin(user);
-        req.user = user;
-        if (user.status && user.status !== "ACTIVE") {
-          return res.status(403).json({ error: `Account ${user.status.toLowerCase()}` });
+        if (merchant && payload.email && !merchant.email) {
+          merchant = await prisma.merchant.update({ where: { id: merchant.id }, data: { email: payload.email } });
         }
-        return next();
+        if (user) req.user = user;
+        if (merchant) req.merchant = merchant;
+        if (req.user) {
+          if (req.user.status && req.user.status !== "ACTIVE") {
+            return res.status(403).json({ error: `Account ${req.user.status.toLowerCase()}` });
+          }
+          return next();
+        }
+        if (req.merchant) {
+          if (req.merchant.status && req.merchant.status !== "ACTIVE") {
+            return res.status(403).json({ error: `Account ${req.merchant.status.toLowerCase()}` });
+          }
+          return next();
+        }
       } catch (joseErr) {
         console.warn("Privy verify error:", joseErr.code || joseErr.message);
       }
     }
 
     const decoded = verify(token);
+    if (decoded.type === "merchant") {
+      merchant = await prisma.merchant.findUnique({ where: { id: decoded.merchantId } });
+      if (!merchant) return res.status(401).json({ error: "Merchant not found" });
+      if (merchant.status && merchant.status !== "ACTIVE") {
+        return res.status(403).json({ error: `Account ${merchant.status.toLowerCase()}` });
+      }
+      req.merchant = merchant;
+      return next();
+    }
     user = await prisma.user.findUnique({ where: { id: decoded.userId } });
     if (!user) return res.status(401).json({ error: "User not found" });
     user = await autoPromoteAdmin(user);

@@ -4,7 +4,7 @@ import { Button } from "../components/ui/button";
 import { Input, Label } from "../components/ui/input";
 import { Badge } from "../components/ui/table";
 import { points, merchant as merchantApi, transactions, analytics } from "../services/endpoints";
-import { Award, Gift, Coins, TrendingUp, Users, CheckCircle, AlertCircle, Store, Wallet, CreditCard, Landmark, Clock, XCircle, Search, UserCheck, UserX, DollarSign, Loader } from "lucide-react";
+import { Award, Gift, Coins, TrendingUp, Users, CheckCircle, AlertCircle, Store, Wallet, CreditCard, Landmark, Clock, XCircle, Search, UserCheck, UserX, DollarSign, Loader, Fingerprint, Shield } from "lucide-react";
 
 const PAY_METHODS = [
   { key: "stripe", label: "Stripe", icon: CreditCard },
@@ -423,6 +423,12 @@ export default function MerchantPanel() {
                     <Badge variant="success">{merchantData.kybStatus}</Badge>
                     {merchantData.tokenSymbol && <Badge variant="secondary">{merchantData.tokenSymbol}</Badge>}
                   </div>
+                  {merchantData.kycHash && (
+                    <div className="flex items-center gap-1 mt-1 text-xs text-green-700">
+                      <Fingerprint className="w-3 h-3" />
+                      <span>KYC Verified on Blockchain</span>
+                    </div>
+                  )}
                 </div>
                 <div className="text-right text-sm text-gray-500 space-y-1">
                   <p>Rate: 1 NPR = {(merchantData.exchangeRate || 100) / 100} pts</p>

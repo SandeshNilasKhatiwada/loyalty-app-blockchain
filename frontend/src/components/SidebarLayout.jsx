@@ -4,20 +4,15 @@ import { usePrivy } from "@privy-io/react-auth";
 import { useAuth } from "../contexts/AuthContext";
 import { cn } from "../lib/utils";
 import {
-  LayoutDashboard, Store, Shield, Menu, X, LogOut, Repeat, Users, BadgeCheck, Clock,
+  LayoutDashboard, Store, Shield, Menu, X, LogOut, Building, User, BadgeCheck, Clock,
 } from "lucide-react";
 
 export default function SidebarLayout({ children }) {
-  const { user, logout: appLogout } = useAuth();
+  const { user, merchant, logout: appLogout, isAdmin, isMerchant, isPendingMerchant } = useAuth();
   const { logout: privyLogout, ready } = usePrivy();
   const navigate = useNavigate();
   const location = useLocation();
   const [sidebarOpen, setSidebarOpen] = useState(false);
-
-  const isUser = !user?.isMerchant && !user?.isAdmin;
-  const isMerchant = !!user?.isMerchant;
-  const isAdmin = !!user?.isAdmin;
-  const merchantStatus = user?.merchant?.kybStatus;
 
   const navItems = [];
 
@@ -26,32 +21,31 @@ export default function SidebarLayout({ children }) {
     navItems.push({ to: "/admin", label: "Admin Panel", icon: Shield });
   }
 
-  if (isMerchant) {
-    navItems.push({ to: "/dashboard", label: "Dashboard", icon: LayoutDashboard });
-    navItems.push({ to: "/merchant", label: "Merchant Panel", icon: Store });
+  if (merchant) {
+    navItems.push({ to: "/merchant/dashboard", label: "Merchant Dashboard", icon: Store });
   }
 
-  if (isUser) {
+  if (!user && !merchant) {
     navItems.push({ to: "/dashboard", label: "Dashboard", icon: LayoutDashboard });
-    navItems.push({ to: "/merchants", label: "Find Merchants", icon: Store });
-    navItems.push({ to: "/apply-merchant", label: "Become Merchant", icon: Store });
   }
 
   const handleLogout = async () => {
     setSidebarOpen(false);
     if (ready) await privyLogout();
     appLogout();
-    navigate("/login", { replace: true });
+    navigate("/", { replace: true });
   };
 
   const active = (to) => location.pathname === to || (to !== "/" && location.pathname.startsWith(to));
 
   const roleBadge = () => {
     if (isAdmin) return { label: "Admin", color: "bg-purple-100 text-purple-800" };
-    if (isMerchant) return { label: merchantStatus === "APPROVED" ? "Merchant" : "Pending Merchant", color: merchantStatus === "APPROVED" ? "bg-green-100 text-green-800" : "bg-yellow-100 text-yellow-800" };
+    if (isPendingMerchant) return { label: "Pending Merchant", color: "bg-yellow-100 text-yellow-800" };
+    if (isMerchant) return { label: "Merchant", color: "bg-green-100 text-green-800" };
     return { label: "User", color: "bg-blue-100 text-blue-800" };
   };
   const badge = roleBadge();
+  const displayEmail = user?.email || merchant?.email || "";
 
   return (
     <div className="min-h-screen bg-gray-50 flex">
@@ -64,7 +58,7 @@ export default function SidebarLayout({ children }) {
         sidebarOpen ? "translate-x-0" : "-translate-x-full",
       )}>
         <div className="h-14 flex items-center gap-2 px-4 border-b border-gray-200 shrink-0">
-          <span className="text-xl">🪙</span>
+          <span className="text-xl">L</span>
           <span className="font-bold text-lg text-blue-600">LoyalChain</span>
         </div>
 
@@ -94,7 +88,7 @@ export default function SidebarLayout({ children }) {
               {badge.label}
             </span>
           </div>
-          <div className="px-3 text-xs text-gray-500 truncate">{user?.email || ""}</div>
+          <div className="px-3 text-xs text-gray-500 truncate">{displayEmail}</div>
           <button
             onClick={handleLogout}
             className="flex items-center gap-3 w-full px-3 py-2.5 rounded-lg text-sm font-medium text-red-600 hover:bg-red-50 transition-colors"
@@ -115,7 +109,7 @@ export default function SidebarLayout({ children }) {
             {badge.label}
           </span>
           <span className="text-sm text-gray-500 truncate max-w-[160px] hidden sm:block">
-            {user?.email || ""}
+            {displayEmail}
           </span>
           <button
             onClick={handleLogout}

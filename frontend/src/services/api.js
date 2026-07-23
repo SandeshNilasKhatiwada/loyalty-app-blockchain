@@ -16,7 +16,7 @@ api.interceptors.response.use(
   (e) => {
     if (e.response?.status === 401) {
       localStorage.removeItem("loyalchain_token");
-      localStorage.removeItem("loyalchain_user");
+      localStorage.removeItem("loyalchain_type");
       window.location.href = "/login";
     }
     return Promise.reject(e);

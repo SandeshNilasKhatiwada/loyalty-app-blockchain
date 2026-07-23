@@ -4,8 +4,6 @@ const path = require("path");
 const prisma = require("../services/prisma");
 const { sign } = require("../services/jwt");
 const { jwtVerify, createRemoteJWKSet, errors } = require("jose");
-const blockchain = require("../services/blockchain");
-const auth = require("../middleware/auth");
 
 const privyJWKS = createRemoteJWKSet(new URL(`https://auth.privy.io/api/v1/apps/${process.env.PRIVY_APP_ID}/jwks.json`));
 
@@ -14,8 +12,6 @@ const storage = multer.diskStorage({
   filename: (req, file, cb) => cb(null, Date.now() + "-" + file.originalname.replace(/[^a-zA-Z0-9.-]/g, "_")),
 });
 const upload = multer({ storage, limits: { fileSize: 5 * 1024 * 1024 } });
-
-const ADMIN_EMAIL = (process.env.ADMIN_EMAIL || "").toLowerCase();
 
 function isCompactJWS(token) {
   return typeof token === "string" && token.split(".").length === 3;
@@ -27,94 +23,103 @@ async function verifyPrivyToken(privyToken) {
   return payload;
 }
 
-async function autoPromoteAdmin(user) {
-  if (!user.isAdmin && user.email && user.email.toLowerCase() === ADMIN_EMAIL) {
-    user = await prisma.user.update({ where: { id: user.id }, data: { isAdmin: true } });
-  }
-  return user;
-}
-
-router.post("/register", async (req, res) => {
+// Merchant registration via Privy
+router.post("/merchant/register", upload.fields([{ name: "logo", maxCount: 1 }]), async (req, res) => {
   try {
-    const { token: privyToken, name: userName } = req.body;
+    const { token: privyToken, businessName, legalBusinessName, phone, country, currency, website, email: bodyEmail } = req.body;
     if (!privyToken) return res.status(400).json({ error: "Auth token required" });
+    if (!businessName) return res.status(400).json({ error: "Business name is required" });
 
     const payload = await verifyPrivyToken(privyToken);
-    let user = await prisma.user.findUnique({ where: { privyUserId: payload.sub } });
-    if (!user) {
-      user = await prisma.user.create({
-        data: { privyUserId: payload.sub, walletAddress: payload.wallet || payload.wallets?.[0]?.address || null, email: payload.email || null, name: userName || payload.email || null },
-      });
-    }
+    const email = payload.email || bodyEmail || null;
+    if (!email) return res.status(400).json({ error: "Email required from Privy" });
 
-    user = await autoPromoteAdmin(user);
+    const existing = await prisma.merchant.findUnique({ where: { email } });
+    if (existing) return res.status(400).json({ error: "Merchant already registered with this email" });
 
-    const token = sign({ userId: user.id, walletAddress: user.walletAddress, isMerchant: user.isMerchant, isAdmin: user.isAdmin });
-    const fullUser = await prisma.user.findUnique({ where: { id: user.id }, include: { merchant: true } });
-    res.json({ token, user: fullUser });
+    const logo = req.files?.logo?.[0]?.filename || null;
+
+    const merchant = await prisma.merchant.create({
+      data: {
+        businessName,
+        legalBusinessName: legalBusinessName || null,
+        email,
+        phone: phone || null,
+        privyUserId: payload.sub,
+        walletAddress: payload.wallet || payload.wallets?.[0]?.address || null,
+        country: country || null,
+        currency: currency || null,
+        website: website || null,
+        logo,
+        kybStatus: "PENDING",
+        status: "ACTIVE",
+      },
+    });
+
+    const token = sign({ merchantId: merchant.id, email: merchant.email, type: "merchant" });
+    res.json({ token, merchant });
   } catch (err) {
-    console.error("Register error:", err);
+    console.error("Merchant register error:", err);
     res.status(500).json({ error: err.message || "Registration failed" });
   }
 });
 
-router.post("/signup", async (req, res) => {
-  const { walletAddress, email, name } = req.body;
-  if (!walletAddress) return res.status(400).json({ error: "walletAddress is required" });
+// Merchant login via Privy
+router.post("/merchant/login", async (req, res) => {
   try {
-    let user = await prisma.user.findUnique({ where: { walletAddress } });
-    if (!user) user = await prisma.user.create({ data: { walletAddress, email, name } });
-    res.json({ token: sign({ userId: user.id, walletAddress: user.walletAddress, isMerchant: user.isMerchant, isAdmin: user.isAdmin }), user });
-  } catch (err) { res.status(500).json({ error: err.message }); }
-});
+    const { token: privyToken, email: bodyEmail } = req.body;
+    if (!privyToken) return res.status(400).json({ error: "Token required" });
 
-router.post("/login", async (req, res) => {
-  const { walletAddress, token: privyToken } = req.body;
-  try {
-    if (privyToken) {
-      const payload = await verifyPrivyToken(privyToken);
-      let user = await prisma.user.findUnique({ where: { privyUserId: payload.sub } });
-      if (!user) {
-        user = await prisma.user.create({ data: { privyUserId: payload.sub, walletAddress: payload.wallet || payload.wallets?.[0]?.address || null, email: payload.email || null } });
-      } else if (payload.email && !user.email) {
-        user = await prisma.user.update({ where: { id: user.id }, data: { email: payload.email } });
-      }
-      user = await autoPromoteAdmin(user);
-      if (user.status && user.status !== "ACTIVE") {
-        return res.status(403).json({ error: `Account ${user.status.toLowerCase()}` });
-      }
-      const fullUser = await prisma.user.findUnique({ where: { id: user.id }, include: { merchant: true } });
-      return res.json({ token: sign({ userId: user.id, walletAddress: user.walletAddress, isMerchant: user.isMerchant, isAdmin: user.isAdmin }), user: fullUser });
+    const payload = await verifyPrivyToken(privyToken);
+    const email = payload.email || bodyEmail || null;
+
+    let merchant = await prisma.merchant.findUnique({ where: { privyUserId: payload.sub } });
+    if (!merchant && email) {
+      merchant = await prisma.merchant.findUnique({ where: { email } });
     }
-    if (!walletAddress) return res.status(400).json({ error: "Provide walletAddress or token" });
-    let user = await prisma.user.findUnique({ where: { walletAddress }, include: { merchant: true } });
-    if (!user) return res.status(404).json({ error: "User not found" });
-    if (user.status && user.status !== "ACTIVE") {
-      return res.status(403).json({ error: `Account ${user.status.toLowerCase()}` });
-    }
-    res.json({ token: sign({ userId: user.id, walletAddress: user.walletAddress, isMerchant: user.isMerchant, isAdmin: user.isAdmin }), user });
-  } catch (err) { res.status(500).json({ error: err.message }); }
+    if (!merchant) return res.status(404).json({ error: "Merchant not found. Please register first." });
+    if (merchant.status !== "ACTIVE") return res.status(403).json({ error: "Account not active" });
+
+    merchant = await prisma.merchant.update({ where: { id: merchant.id }, data: { lastLoginAt: new Date() } });
+
+    const token = sign({ merchantId: merchant.id, email: merchant.email, type: "merchant" });
+    res.json({ token, merchant });
+  } catch (err) {
+    console.error("Merchant login error:", err);
+    res.status(500).json({ error: err.message });
+  }
 });
 
-router.post("/merchant-signup", auth, upload.fields([{ name: "citizenshipPhoto", maxCount: 1 }, { name: "documents", maxCount: 5 }]), async (req, res) => {
-  const { businessName, registrationNo, ownerName } = req.body;
-  if (!businessName) return res.status(400).json({ error: "businessName is required" });
+// Admin login via Privy
+router.post("/admin/login", async (req, res) => {
   try {
-    let merchant = await prisma.merchant.findUnique({ where: { userId: req.user.id } });
-    if (merchant) return res.status(400).json({ error: "Already a merchant" });
-    const citizenshipPhoto = req.files?.citizenshipPhoto?.[0]?.filename || null;
-    const documents = req.files?.documents?.map((f) => f.filename) || [];
-    merchant = await prisma.merchant.create({
-      data: { userId: req.user.id, businessName, ownerName: ownerName || null, registrationNo: registrationNo || "", citizenshipPhoto, documents: JSON.stringify(documents), kybStatus: "PENDING", exchangeRate: 100, feeRate: 5 },
-    });
-    await prisma.user.update({ where: { id: req.user.id }, data: { isMerchant: true } });
-    res.json({ merchant });
-  } catch (err) { res.status(500).json({ error: err.message }); }
-});
+    const { token: privyToken, email: bodyEmail } = req.body;
+    if (!privyToken) return res.status(400).json({ error: "Token required" });
 
-router.get("/me", auth, async (req, res) => {
-  const user = await prisma.user.findUnique({ where: { id: req.user.id }, include: { merchant: true } });
-  res.json({ user });
+    const payload = await verifyPrivyToken(privyToken);
+    const email = payload.email || bodyEmail || null;
+    if (!email) return res.status(400).json({ error: "Email required" });
+
+    let user = await prisma.user.findUnique({ where: { privyUserId: payload.sub } });
+    if (!user) {
+      const ADMIN_EMAIL = (process.env.ADMIN_EMAIL || "").toLowerCase();
+      if (email.toLowerCase() === ADMIN_EMAIL) {
+        user = await prisma.user.create({
+          data: { privyUserId: payload.sub, email, name: "Admin", isAdmin: true },
+        });
+      } else {
+        return res.status(403).json({ error: "Not authorized as admin" });
+      }
+    }
+    if (!user.isAdmin) return res.status(403).json({ error: "Not an admin" });
+    if (user.status !== "ACTIVE") return res.status(403).json({ error: "Account not active" });
+
+    const jwtToken = sign({ userId: user.id, email: user.email, isAdmin: true, type: "admin" });
+    res.json({ token: jwtToken, user });
+  } catch (err) {
+    console.error("Admin login error:", err);
+    res.status(500).json({ error: err.message });
+  }
 });
 
 module.exports = router;

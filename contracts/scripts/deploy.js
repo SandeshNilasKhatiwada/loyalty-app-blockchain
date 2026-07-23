@@ -16,7 +16,11 @@ async function main() {
   const registryAddress = registry.address;
   console.log("Registry deployed to:", registryAddress);
 
-  const data = { factory: factoryAddress, registry: registryAddress };
+  const dataRegistry = await connection.viem.deployContract("DataRegistry", []);
+  const dataRegistryAddress = dataRegistry.address;
+  console.log("DataRegistry deployed to:", dataRegistryAddress);
+
+  const data = { factory: factoryAddress, registry: registryAddress, dataRegistry: dataRegistryAddress };
   writeFileSync(
     join(dirname, "../../backend/contract-addresses.json"),
     JSON.stringify(data, null, 2),
