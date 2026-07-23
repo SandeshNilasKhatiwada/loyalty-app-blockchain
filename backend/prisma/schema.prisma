@@ -1,0 +1,88 @@
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "postgresql"
+}
+
+model User {
+  id          String   @id @default(cuid())
+  privyUserId String?  @unique
+  email       String?  @unique
+  name        String?
+  isAdmin     Boolean  @default(false)
+  status      String   @default("ACTIVE")
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
+}
+
+model Merchant {
+  id               String   @id @default(cuid())
+  businessName     String
+  legalBusinessName String?
+  email            String   @unique
+  phone            String?
+  privyUserId      String   @unique
+  embeddedWalletId String?  @unique
+  walletAddress    String?  @unique
+  country          String?
+  currency         String?
+  website          String?
+  logo             String?
+  isVerified       Boolean  @default(false)
+  kybStatus        String?
+  plan             String   @default("FREE")
+  status           String   @default("ACTIVE")
+  tokenBalance     BigInt   @default(0)
+  tokenContract    String?
+  exchangeRate     Int      @default(100)
+  feeRate          Int      @default(5)
+  lastLoginAt      DateTime?
+  createdAt        DateTime @default(now())
+  updatedAt        DateTime @updatedAt
+
+  transactions    Transaction[]
+  pendingAwards   PendingAward[]
+}
+
+model Customer {
+  id            String   @id @default(cuid())
+  email         String   @unique
+  name          String?
+  phone         String?
+  pointsBalance BigInt   @default(0)
+  createdAt     DateTime @default(now())
+  updatedAt     DateTime @updatedAt
+
+  pendingAwards PendingAward[]
+  transactions  Transaction[]
+}
+
+model PendingAward {
+  id         String   @id @default(cuid())
+  merchantId String
+  merchant   Merchant @relation(fields: [merchantId], references: [id])
+  customerId String
+  customer   Customer @relation(fields: [customerId], references: [id])
+  amount     String
+  status     String   @default("PENDING")
+  createdAt  DateTime @default(now())
+  updatedAt  DateTime @updatedAt
+}
+
+model Transaction {
+  id            String   @id @default(cuid())
+  txHash        String   @unique
+  type          String
+  fromAddress   String
+  toAddress     String
+  amount        String
+  tokenContract String?
+  status        String   @default("CONFIRMED")
+  merchantId    String?
+  merchant      Merchant? @relation(fields: [merchantId], references: [id])
+  customerId    String?
+  customer      Customer? @relation(fields: [customerId], references: [id])
+  createdAt     DateTime @default(now())
+}
