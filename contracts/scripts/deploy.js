@@ -18,7 +18,7 @@ async function main() {
 
   const data = { factory: factoryAddress, registry: registryAddress };
   writeFileSync(
-    join(dirname, "../../api/contract-addresses.json"),
+    join(dirname, "../../backend/contract-addresses.json"),
     JSON.stringify(data, null, 2),
   );
   console.log("contract-addresses.json written");

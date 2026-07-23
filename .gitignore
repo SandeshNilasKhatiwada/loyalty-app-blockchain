@@ -15,6 +15,9 @@ snapshots/
 # Prisma
 prisma/migrations/
 
+# Generated contract addresses (local dev)
+backend/contract-addresses.json
+
 # IDE
 .vscode/
 .idea/

@@ -34,6 +34,7 @@ export default function SidebarLayout({ children }) {
   if (isUser) {
     navItems.push({ to: "/dashboard", label: "Dashboard", icon: LayoutDashboard });
     navItems.push({ to: "/merchants", label: "Find Merchants", icon: Store });
+    navItems.push({ to: "/apply-merchant", label: "Become Merchant", icon: Store });
   }
 
   const handleLogout = async () => {

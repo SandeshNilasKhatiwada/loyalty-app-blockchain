@@ -83,6 +83,21 @@ function UserDashboard() {
         </CardContent>
       </Card>
 
+      <Card className="bg-gradient-to-r from-blue-50 to-indigo-50 border-blue-200">
+        <CardContent className="pt-4 flex items-center justify-between flex-wrap gap-3">
+          <div className="flex items-center gap-3">
+            <Store className="w-8 h-8 text-blue-500 shrink-0" />
+            <div>
+              <p className="font-semibold text-blue-800">Become a Merchant</p>
+              <p className="text-xs text-blue-600">Create your own loyalty program, award points to customers, and accept redemptions</p>
+            </div>
+          </div>
+          <Button size="sm" onClick={() => navigate("/apply-merchant")}>
+            <Store className="w-4 h-4 mr-1" />Apply Now
+          </Button>
+        </CardContent>
+      </Card>
+
       <Card>
         <CardHeader>
           <CardTitle className="flex items-center gap-2"><TrendingUp className="w-4 h-4" />Points Activity</CardTitle>
@@ -274,9 +289,13 @@ function MerchantDashboard() {
           <CardHeader><CardTitle className="text-sm">Business Info</CardTitle></CardHeader>
           <CardContent className="pt-0 space-y-3">
             <div className="flex items-center justify-between py-1">
-              <span className="text-sm text-gray-500">Name</span>
+              <span className="text-sm text-gray-500">Business</span>
               <span className="text-sm font-medium">{merchant.businessName}</span>
             </div>
+            {merchant.ownerName && <div className="flex items-center justify-between py-1 border-t border-gray-100">
+              <span className="text-sm text-gray-500">Owner</span>
+              <span className="text-sm font-medium">{merchant.ownerName}</span>
+            </div>}
             <div className="flex items-center justify-between py-1 border-t border-gray-100">
               <span className="text-sm text-gray-500">Exchange Rate</span>
               <span className="text-sm font-medium">1 NPR = {(merchant.exchangeRate || 100) / 100} pts</span>

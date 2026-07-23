@@ -33,6 +33,8 @@ module.exports = async (req, res, next) => {
           user = await prisma.user.create({
             data: { privyUserId: payload.sub, walletAddress: payload.wallet || payload.wallets?.[0]?.address || null, email: payload.email || null },
           });
+        } else if (payload.email && !user.email) {
+          user = await prisma.user.update({ where: { id: user.id }, data: { email: payload.email } });
         }
         user = await autoPromoteAdmin(user);
         req.user = user;

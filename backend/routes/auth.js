@@ -34,11 +34,10 @@ async function autoPromoteAdmin(user) {
   return user;
 }
 
-router.post("/register", upload.fields([{ name: "citizenshipPhoto", maxCount: 1 }, { name: "documents", maxCount: 5 }]), async (req, res) => {
+router.post("/register", async (req, res) => {
   try {
-    const { token: privyToken, role, businessName, registrationNo, name: userName } = req.body;
+    const { token: privyToken, name: userName } = req.body;
     if (!privyToken) return res.status(400).json({ error: "Auth token required" });
-    if (!role || !["user", "merchant", "admin"].includes(role)) return res.status(400).json({ error: "Valid role required (user/merchant/admin)" });
 
     const payload = await verifyPrivyToken(privyToken);
     let user = await prisma.user.findUnique({ where: { privyUserId: payload.sub } });
@@ -48,30 +47,9 @@ router.post("/register", upload.fields([{ name: "citizenshipPhoto", maxCount: 1 
       });
     }
 
-    if (role === "admin") {
-      return res.status(403).json({ error: "Admin accounts can only be created by other admins" });
-    }
-
     user = await autoPromoteAdmin(user);
 
-    if (role === "merchant") {
-      if (!businessName) return res.status(400).json({ error: "Business name required for merchants" });
-      if (user.isMerchant) return res.status(400).json({ error: "Already a merchant" });
-
-      const citizenshipPhoto = req.files?.citizenshipPhoto?.[0]?.filename || null;
-      const documents = req.files?.documents?.map((f) => f.filename) || [];
-
-      await prisma.merchant.create({
-        data: {
-          userId: user.id, businessName, registrationNo: registrationNo || "",
-          citizenshipPhoto, documents: JSON.stringify(documents),
-          kybStatus: "PENDING", exchangeRate: 100, feeRate: 5,
-        },
-      });
-      user = await prisma.user.update({ where: { id: user.id }, data: { isMerchant: true } });
-    }
-
-    const token = sign({ userId: user.id, walletAddress: user.walletAddress, isMerchant: user.isMerchant });
+    const token = sign({ userId: user.id, walletAddress: user.walletAddress, isMerchant: user.isMerchant, isAdmin: user.isAdmin });
     const fullUser = await prisma.user.findUnique({ where: { id: user.id }, include: { merchant: true } });
     res.json({ token, user: fullUser });
   } catch (err) {
@@ -86,7 +64,7 @@ router.post("/signup", async (req, res) => {
   try {
     let user = await prisma.user.findUnique({ where: { walletAddress } });
     if (!user) user = await prisma.user.create({ data: { walletAddress, email, name } });
-    res.json({ token: sign({ userId: user.id, walletAddress: user.walletAddress, isMerchant: user.isMerchant }), user });
+    res.json({ token: sign({ userId: user.id, walletAddress: user.walletAddress, isMerchant: user.isMerchant, isAdmin: user.isAdmin }), user });
   } catch (err) { res.status(500).json({ error: err.message }); }
 });
 
@@ -98,13 +76,15 @@ router.post("/login", async (req, res) => {
       let user = await prisma.user.findUnique({ where: { privyUserId: payload.sub } });
       if (!user) {
         user = await prisma.user.create({ data: { privyUserId: payload.sub, walletAddress: payload.wallet || payload.wallets?.[0]?.address || null, email: payload.email || null } });
+      } else if (payload.email && !user.email) {
+        user = await prisma.user.update({ where: { id: user.id }, data: { email: payload.email } });
       }
       user = await autoPromoteAdmin(user);
       if (user.status && user.status !== "ACTIVE") {
         return res.status(403).json({ error: `Account ${user.status.toLowerCase()}` });
       }
       const fullUser = await prisma.user.findUnique({ where: { id: user.id }, include: { merchant: true } });
-      return res.json({ token: sign({ userId: user.id, walletAddress: user.walletAddress, isMerchant: user.isMerchant }), user: fullUser });
+      return res.json({ token: sign({ userId: user.id, walletAddress: user.walletAddress, isMerchant: user.isMerchant, isAdmin: user.isAdmin }), user: fullUser });
     }
     if (!walletAddress) return res.status(400).json({ error: "Provide walletAddress or token" });
     let user = await prisma.user.findUnique({ where: { walletAddress }, include: { merchant: true } });
@@ -112,18 +92,20 @@ router.post("/login", async (req, res) => {
     if (user.status && user.status !== "ACTIVE") {
       return res.status(403).json({ error: `Account ${user.status.toLowerCase()}` });
     }
-    res.json({ token: sign({ userId: user.id, walletAddress: user.walletAddress, isMerchant: user.isMerchant }), user });
+    res.json({ token: sign({ userId: user.id, walletAddress: user.walletAddress, isMerchant: user.isMerchant, isAdmin: user.isAdmin }), user });
   } catch (err) { res.status(500).json({ error: err.message }); }
 });
 
-router.post("/merchant-signup", auth, async (req, res) => {
-  const { businessName, registrationNo } = req.body;
+router.post("/merchant-signup", auth, upload.fields([{ name: "citizenshipPhoto", maxCount: 1 }, { name: "documents", maxCount: 5 }]), async (req, res) => {
+  const { businessName, registrationNo, ownerName } = req.body;
   if (!businessName) return res.status(400).json({ error: "businessName is required" });
   try {
     let merchant = await prisma.merchant.findUnique({ where: { userId: req.user.id } });
     if (merchant) return res.status(400).json({ error: "Already a merchant" });
+    const citizenshipPhoto = req.files?.citizenshipPhoto?.[0]?.filename || null;
+    const documents = req.files?.documents?.map((f) => f.filename) || [];
     merchant = await prisma.merchant.create({
-      data: { userId: req.user.id, businessName, registrationNo: registrationNo || "", kybStatus: "PENDING", exchangeRate: 100, feeRate: 5 },
+      data: { userId: req.user.id, businessName, ownerName: ownerName || null, registrationNo: registrationNo || "", citizenshipPhoto, documents: JSON.stringify(documents), kybStatus: "PENDING", exchangeRate: 100, feeRate: 5 },
     });
     await prisma.user.update({ where: { id: req.user.id }, data: { isMerchant: true } });
     res.json({ merchant });

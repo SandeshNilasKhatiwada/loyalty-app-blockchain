@@ -19,6 +19,14 @@ export const points = {
 export const merchant = {
   topup: (d) => api.post("/merchant/topup", d),
   status: () => api.get("/merchant/status"),
+  customers: () => api.get("/merchant/customers"),
+  requestAward: (d) => api.post("/merchant/request-award", d),
+  pendingAwards: () => api.get("/merchant/pending-awards"),
+  approveAward: (d) => api.post("/merchant/approve-award", d),
+  rejectAward: (d) => api.post("/merchant/reject-award", d),
+  createPaymentIntent: (d) => api.post("/merchant/create-payment-intent", d),
+  confirmPayment: (d) => api.post("/merchant/confirm-payment", d),
+  deleteAccount: () => api.delete("/merchant/account"),
 };
 
 export const merchants = {

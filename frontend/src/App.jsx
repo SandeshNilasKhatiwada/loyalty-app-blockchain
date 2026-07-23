@@ -8,6 +8,7 @@ import Swap from "./pages/Swap";
 import MerchantPanel from "./pages/MerchantPanel";
 import Admin from "./pages/Admin";
 import Merchants from "./pages/Merchants";
+import ApplyMerchant from "./pages/ApplyMerchant";
 import SidebarLayout from "./components/SidebarLayout";
 
 function P({ children }) {
@@ -22,12 +23,13 @@ export default function App() {
     <Routes>
       <Route path="/" element={user ? <Navigate to="/dashboard" /> : <Landing />} />
       <Route path="/login" element={user ? <Navigate to="/dashboard" /> : <Login />} />
-      <Route path="/register" element={user ? <Navigate to="/dashboard" /> : <Register />} />
+      <Route path="/register" element={<Register />} />
       <Route path="/dashboard" element={<P><SidebarLayout><Dashboard /></SidebarLayout></P>} />
       <Route path="/swap" element={<P><SidebarLayout><Swap /></SidebarLayout></P>} />
       <Route path="/merchant" element={<P><SidebarLayout><MerchantPanel /></SidebarLayout></P>} />
       <Route path="/merchants" element={<P><SidebarLayout><Merchants /></SidebarLayout></P>} />
       <Route path="/admin" element={<P><SidebarLayout><Admin /></SidebarLayout></P>} />
+      <Route path="/apply-merchant" element={<ApplyMerchant />} />
       <Route path="*" element={<Navigate to="/" />} />
     </Routes>
   );

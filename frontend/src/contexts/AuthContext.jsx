@@ -15,9 +15,11 @@ export function AuthProvider({ children }) {
       api.get("/auth/me").then((r) => {
         setUser(r.data.user);
         localStorage.setItem("loyalchain_user", JSON.stringify(r.data.user));
-      }).catch(() => logout());
+        setLoading(false);
+      }).catch(() => { logout(); setLoading(false); });
+    } else {
+      setLoading(false);
     }
-    setLoading(false);
   }, []);
 
   const login = (token, data) => {

@@ -30,6 +30,7 @@ export default function Login() {
       const token = await getAccessToken();
       const r = await api.post("/auth/login", { token });
       appLogin(r.data.token, r.data.user);
+      setLoading(false);
     } catch (e) {
       setError(e.response?.data?.error || "Login failed");
       setLoading(false);

@@ -97,7 +97,7 @@ export default function Admin() {
                   <div key={m.id} className="flex flex-col sm:flex-row justify-between items-start sm:items-center gap-2 p-3 bg-yellow-50 rounded-lg border border-yellow-200">
                     <div>
                       <p className="font-medium">{m.businessName}</p>
-                      <p className="text-xs text-gray-500">{m.user?.email || m.user?.walletAddress?.slice(0, 10)}... | {new Date(m.createdAt).toLocaleDateString()}</p>
+                      <p className="text-xs text-gray-500">{m.user?.email || m.user?.walletAddress?.slice(0, 10)}... {m.ownerName ? `| Owner: ${m.ownerName}` : ""} | {new Date(m.createdAt).toLocaleDateString()}</p>
                     </div>
                     <div className="flex gap-2">
                       <Button size="sm" onClick={() => approve(m.id, m.businessName)}><CheckCircle className="w-3 h-3 mr-1" />Approve</Button>

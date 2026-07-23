@@ -21,6 +21,7 @@ model User {
 
   merchant      Merchant?
   transactions  Transaction[]
+  pendingAwards PendingAward[]
 }
 
 model Merchant {
@@ -28,6 +29,7 @@ model Merchant {
   userId          String   @unique
   user            User     @relation(fields: [userId], references: [id])
   businessName    String
+  ownerName       String?
   registrationNo  String?
   address         String?
   citizenshipPhoto String?
@@ -42,7 +44,20 @@ model Merchant {
   createdAt       DateTime @default(now())
   updatedAt       DateTime @updatedAt
 
-  transactions  Transaction[]
+  transactions    Transaction[]
+  pendingAwards   PendingAward[]
+}
+
+model PendingAward {
+  id          String   @id @default(cuid())
+  merchantId  String
+  merchant    Merchant @relation(fields: [merchantId], references: [id])
+  customerId  String
+  customer    User     @relation(fields: [customerId], references: [id])
+  amount      String
+  status      String   @default("PENDING")
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
 }
 
 model Transaction {
